@@ -557,7 +557,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setMemories(Array.isArray(savedData.memories) ? savedData.memories : []);
                 setProactiveCommunications(Array.isArray(savedData.proactiveCommunications) ? savedData.proactiveCommunications : []);
                 setAsyncApiKey(savedData.asyncApiKey || null);
-                setFirebaseApiKey(savedData.firebaseApiKey || null);
+                setAnthropicApiKeyState(savedData.anthropicApiKey || null);
                 setFirebaseProjectId(savedData.firebaseProjectId || null);
                 setFirebaseAppId(savedData.firebaseAppId || null);
                 setFirebaseMessagingSenderId(savedData.firebaseMessagingSenderId || null);
