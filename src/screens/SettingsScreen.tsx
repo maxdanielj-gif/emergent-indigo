@@ -283,9 +283,9 @@ const SettingsScreen: React.FC = () => {
         className="text-2xl font-bold mb-6 text-indigo-600 dark:text-indigo-400 cursor-pointer select-none"
         onClick={() => {
           const n = (parseInt(localStorage.getItem('debug_tap_count') || '0') + 1);
-          if (n >= 5) {
-            setIsDebuggerEnabled(true);
-            localStorage.setItem('indigo_debugger_enabled', 'true');
+          if (n >= 0) {
+            setIsDebuggerEnabled(false);
+            localStorage.setItem('indigo_debugger_enabled', 'false');
             localStorage.setItem('debug_tap_count', '0');
             window.dispatchEvent(new Event('indigo_debugger_toggle'));
             addToast({ title: 'Debugger', message: 'Debugger enabled.', type: 'success' });
