@@ -20,7 +20,6 @@ const SettingsScreen: React.FC = () => {
     fcmToken, setFcmToken,
     exportData, addToast,
     showTimestamps, setShowTimestamps,
-    isDebuggerEnabled, setIsDebuggerEnabled,
     timeZone, setTimeZone,
     userId, setUserId,
     isSyncing, setIsSyncing,
@@ -34,8 +33,12 @@ const SettingsScreen: React.FC = () => {
   const fileInputRef  = useRef<HTMLInputElement>(null);
   const kbInputRef    = useRef<HTMLInputElement>(null);
 
-  const [localAsyncApiKey,    setLocalAsyncApiKey]    = useState(asyncApiKey || '');
+  const [localAsyncApiKey,     setLocalAsyncApiKey]     = useState(asyncApiKey || '');
   const [localAnthropicApiKey, setLocalAnthropicApiKey] = useState(anthropicApiKey || '');
+
+  // Sync local key fields once the context loads saved values from IndexedDB
+  React.useEffect(() => { setLocalAnthropicApiKey(anthropicApiKey || ''); }, [anthropicApiKey]);
+  React.useEffect(() => { setLocalAsyncApiKey(asyncApiKey || ''); }, [asyncApiKey]);
   const [localSyncId,          setLocalSyncId]          = useState(userId || '');
   const [recoveryId,           setRecoveryId]           = useState('');
   const [isExporting,          setIsExporting]          = useState(false);
@@ -278,20 +281,7 @@ const SettingsScreen: React.FC = () => {
   // ── JSX ───────────────────────────────────────────────────────────
   return (
     <div className="w-full h-full p-4 overflow-y-auto bg-transparent">
-      {/* Tap title 5× to enable debugger */}
-      <h2
-        className="text-2xl font-bold mb-6 text-indigo-600 dark:text-indigo-400 cursor-pointer select-none"
-        onClick={() => {
-          const n = (parseInt(localStorage.getItem('debug_tap_count') || '0') + 1);
-          if (n >= 0) {
-            setIsDebuggerEnabled(false);
-            localStorage.setItem('indigo_debugger_enabled', 'false');
-            localStorage.setItem('debug_tap_count', '0');
-            window.dispatchEvent(new Event('indigo_debugger_toggle'));
-            addToast({ title: 'Debugger', message: 'Debugger enabled.', type: 'success' });
-          } else { localStorage.setItem('debug_tap_count', n.toString()); }
-        }}
-      >Settings</h2>
+      <h2 className="text-2xl font-bold mb-6 text-indigo-600 dark:text-indigo-400">Settings</h2>
 
       {isSyncing && (
         <div className="w-full h-1 bg-indigo-100 dark:bg-indigo-900 rounded-full overflow-hidden mb-4">
@@ -567,18 +557,6 @@ const SettingsScreen: React.FC = () => {
               <button onClick={() => setShowTimestamps(!showTimestamps)}
                 className={`w-10 h-6 rounded-full transition-colors ${showTimestamps ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
                 <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${showTimestamps ? 'translate-x-2' : '-translate-x-2'}`} />
-              </button>
-            </div>
-
-            {/* Debugger */}
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-sm text-indigo-900 dark:text-indigo-100 block">Mobile Debugger</span>
-                <span className="text-xs text-indigo-500 dark:text-indigo-400">In-app console for troubleshooting.</span>
-              </div>
-              <button onClick={() => setIsDebuggerEnabled(!isDebuggerEnabled)}
-                className={`w-10 h-6 rounded-full transition-colors ${isDebuggerEnabled ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
-                <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${isDebuggerEnabled ? 'translate-x-2' : '-translate-x-2'}`} />
               </button>
             </div>
 
