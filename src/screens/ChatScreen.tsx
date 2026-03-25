@@ -943,10 +943,6 @@ const ChatScreen: React.FC = () => {
                   <span className="text-[10px] font-bold uppercase tracking-widest">{isHandsFree ? 'Hands-Free ON' : 'Hands-Free'}</span>
                 </button>
             </div>
-            <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-indigo-500" />
-                Powered by Gemini
-            </p>
         </div>
       </div>
     </div>
