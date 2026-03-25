@@ -427,31 +427,6 @@ app.post("/api/tts/generate", express.json(), async (req, res) => {
 });
 
 
-  const { text, voiceId, apiKey: userApiKey, ...rest } = req.body;
-  if (!text || !voiceId) return res.status(400).json({ error: "Missing text or voiceId" });
-  const apiKey = userApiKey || process.env.ASYNC_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: "Async API key not configured" });
-  try {
-    const response = await fetch("https://api.async.com/text_to_speech/stream", {
-      method: "POST",
-      headers: { "x-api-key": apiKey, version: "v1", "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice_id: voiceId, ...rest }),
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      return res.status(response.status).json({ error: `Async TTS error: ${errorText || response.statusText}` });
-    }
-    res.setHeader("Content-Type", "audio/mpeg");
-    if (response.body) {
-      (Readable as any).fromWeb(response.body).pipe(res);
-    } else {
-      res.status(500).json({ error: "No response body from Async API" });
-    }
-  } catch (e: any) {
-    res.status(500).json({ error: e.message || "Failed to generate speech" });
-  }
-});
-
 app.post("/api/voices", express.json(), async (req, res) => {
   const { apiKey: userApiKey, ...params } = req.body;
   const apiKey = userApiKey || process.env.ASYNC_API_KEY;
