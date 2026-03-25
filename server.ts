@@ -495,6 +495,7 @@ app.post("/api/voices/clone", async (req, res) => {
 });
 
 
+app.post("/api/voices", express.json(), async (req, res) => {
   const { apiKey: userApiKey, ...params } = req.body;
   const apiKey = userApiKey || process.env.ASYNC_API_KEY;
   if (!apiKey) return res.status(400).json({ error: "Async API key not configured. Add your key in Settings." });
