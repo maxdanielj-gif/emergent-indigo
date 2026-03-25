@@ -134,11 +134,12 @@ const AIProfileScreen: React.FC = () => {
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
         audio.onended = () => { setIsTestingVoice(false); URL.revokeObjectURL(audioUrl); };
-        audio.play();
-      } catch (error) {
+        audio.onerror = () => { setIsTestingVoice(false); URL.revokeObjectURL(audioUrl); };
+        audio.play().catch(() => setIsTestingVoice(false));
+      } catch (error: any) {
         console.error("Async TTS Error:", error);
-        addToast({ title: "Voice Error", message: "Async TTS failed. Using browser voice instead.", type: "warning" });
-        speakWithBrowser(text);
+        addToast({ title: "Voice Error", message: error.message || "Async TTS failed.", type: "error" });
+        setIsTestingVoice(false);
       }
     } else {
       speakWithBrowser(text);
@@ -154,22 +155,20 @@ const AIProfileScreen: React.FC = () => {
     if (voiceURI) {
         selectedVoice = availableVoices.find(v => v.voiceURI === voiceURI);
     }
-
-    // If no specific voiceURI is selected or found, try to match by gender
     if (!selectedVoice && voiceGender !== 'none') {
         const genderFilter = voiceGender === 'male' ? 'male' : 'female';
         selectedVoice = availableVoices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes(genderFilter));
     }
+    if (selectedVoice) utterance.voice = selectedVoice;
 
-    if (selectedVoice) {
-        utterance.voice = selectedVoice;
-    }
-    
     utterance.pitch = voicePitch;
     utterance.rate = voiceSpeed;
-    utterance.onend = () => setIsTestingVoice(false);
+    utterance.onend   = () => setIsTestingVoice(false);
+    utterance.onerror = () => setIsTestingVoice(false);
     
     window.speechSynthesis.speak(utterance);
+    // Safety timeout — if onend never fires (some Android browsers)
+    setTimeout(() => setIsTestingVoice(false), 10000);
   };
 
 
