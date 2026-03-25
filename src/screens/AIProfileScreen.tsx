@@ -1147,6 +1147,18 @@ const AIProfileScreen: React.FC = () => {
                                 <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${knowsItsAI ? 'translate-x-5' : 'translate-x-0'}`} />
                             </button>
                         </div>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <label className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Time Awareness</label>
+                                <span className="block text-xs text-indigo-500 dark:text-indigo-400">AI knows the current date and time (timezone set in Settings)</span>
+                            </div>
+                            <button
+                                onClick={() => setTimeAwareness(!timeAwareness)}
+                                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${timeAwareness ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}
+                            >
+                                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${timeAwareness ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </button>
+                        </div>
                         <div>
                             <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">AI Model</label>
                             <select
@@ -1232,24 +1244,18 @@ const AIProfileScreen: React.FC = () => {
                 <div className="border-t border-indigo-100 dark:border-indigo-800 pt-6 mt-6">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-medium text-indigo-900 dark:text-indigo-100">Voice Settings</h3>
-                        <div className="flex items-center space-x-4">
-                            <div className="flex items-center">
-                                <input
-                                    id="speechEnabled"
-                                    type="checkbox"
-                                    checked={aiCanGenerateSpeech}
-                                    onChange={(e) => setAiCanGenerateSpeech(e.target.checked)}
-                                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-indigo-300 dark:border-indigo-700 rounded dark:bg-indigo-950"
-                                />
-                                <label htmlFor="speechEnabled" className="ml-2 block text-xs text-indigo-900 dark:text-indigo-100">
-                                    Enable Speech
-                                </label>
+                        <div className="flex items-center gap-6">
+                            <div className="flex items-center justify-between gap-3">
+                                <label className="text-sm text-indigo-900 dark:text-indigo-100">Enable Speech</label>
+                                <button
+                                    onClick={() => setAiCanGenerateSpeech(!aiCanGenerateSpeech)}
+                                    className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${aiCanGenerateSpeech ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}
+                                >
+                                    <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${aiCanGenerateSpeech ? 'translate-x-2' : '-translate-x-2'}`} />
+                                </button>
                             </div>
-                            <div className="flex items-center justify-between">
-                                <label className="text-sm text-indigo-900 dark:text-indigo-100">
-                                    Auto-read messages
-                                    <span className="block text-xs text-indigo-500 dark:text-indigo-400">AI speaks every response aloud</span>
-                                </label>
+                            <div className="flex items-center justify-between gap-3">
+                                <label className="text-sm text-indigo-900 dark:text-indigo-100">Auto-read</label>
                                 <button
                                     onClick={() => setAutoReadMessages(!autoReadMessages)}
                                     className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${autoReadMessages ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}
@@ -1471,18 +1477,6 @@ const AIProfileScreen: React.FC = () => {
                             )}
                             </div>
 
-                            <div className="flex items-center">
-                <input
-                    id="timeAwareness"
-                    type="checkbox"
-                    checked={timeAwareness}
-                    onChange={(e) => setTimeAwareness(e.target.checked)}
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-indigo-300 dark:border-indigo-700 rounded dark:bg-indigo-950"
-                />
-                <label htmlFor="timeAwareness" className="ml-2 block text-sm text-indigo-900 dark:text-indigo-100">
-                    Enable Time Awareness — AI knows the current date and time (timezone set in Settings)
-                </label>
-                </div>
             </>
         )}
     </div>

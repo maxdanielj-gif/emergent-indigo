@@ -489,23 +489,6 @@ const SettingsScreen: React.FC = () => {
           <h3 className="text-lg font-semibold text-indigo-900 dark:text-indigo-100 mb-4 border-b border-indigo-200 dark:border-indigo-800 pb-2">Preferences</h3>
           <div className="space-y-4">
 
-            {/* Auto-save interval */}
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-sm text-indigo-900 dark:text-indigo-100 block">Auto-Save Chat</span>
-                <span className="text-xs text-indigo-500 dark:text-indigo-400">Interval in seconds (0 to disable).</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <input type="number" min="0" value={autoSaveChatInterval}
-                  onChange={(e) => setAutoSaveChatInterval(Number(e.target.value))}
-                  className="app-input w-20 text-center text-sm" />
-                <button onClick={() => setAutoSaveChat(!autoSaveChat)}
-                  className={`w-10 h-6 rounded-full transition-colors ${autoSaveChat ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
-                  <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${autoSaveChat ? 'translate-x-2' : '-translate-x-2'}`} />
-                </button>
-              </div>
-            </div>
-
             {/* JSON backup interval */}
             <div className="flex items-center justify-between">
               <div>
