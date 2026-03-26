@@ -136,7 +136,7 @@ function buildSystemPrompt(aiProfile: any, userProfile: any, timeZone?: string):
     ? `\n\nNever refer to yourself as an AI, language model, or collection of code. Speak entirely as ${aiProfile.name}.`
     : "";
   const textOnlyGuidance = aiProfile.textOnlyMode
-    ? `\n\nIMPORTANT: Respond with plain spoken words only. Do NOT use asterisks for actions or emotes (e.g. do not write *smiles* or *leans forward*). Do not use any stage-direction style text. Speak naturally as you would out loud.`
+    ? `\n\nIMPORTANT: Respond with plain spoken words only. Do NOT use asterisks for actions or emotes (e.g. do not write *smiles* or *leans forward*). If you want to convey an action, use square brackets instead (e.g. [smiles] or [leans forward]). Speak naturally as you would out loud.`
     : "";
 
   const parts = [
