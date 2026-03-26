@@ -133,14 +133,15 @@ export interface ElevenLabsVoiceParams {
 export const generateElevenLabsSpeech = async (
   text: string,
   voiceId: string,
-  apiKey?: string | null
+  apiKey?: string | null,
+  modelId?: string
 ): Promise<Blob> => {
   if (!apiKey) throw new Error("ElevenLabs API key not set. Add it in Settings.");
 
   const res = await fetch('/api/tts/elevenlabs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voiceId, apiKey }),
+    body: JSON.stringify({ text, voiceId, apiKey, modelId }),
   });
 
   if (!res.ok) {
