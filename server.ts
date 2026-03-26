@@ -515,13 +515,22 @@ app.post("/api/tts/elevenlabs", express.json(), async (req, res) => {
   }
 });
 
-// ── ElevenLabs: list voices ───────────────────────────────────────────────────
+// ── ElevenLabs: list voices (v2 with search/filter/sort) ─────────────────────
 app.get("/api/tts/elevenlabs/voices", async (req, res) => {
   const apiKey = (req.query.api_key as string) || process.env.ELEVENLABS_API_KEY;
   if (!apiKey) return res.status(400).json({ error: "ElevenLabs API key not configured" });
 
   try {
-    const response = await fetch("https://api.elevenlabs.io/v1/voices", {
+    const params = new URLSearchParams();
+    params.set("page_size", "100");
+    params.set("include_total_count", "false");
+    if (req.query.search)         params.set("search",         req.query.search as string);
+    if (req.query.sort)           params.set("sort",           req.query.sort as string);
+    if (req.query.sort_direction) params.set("sort_direction", req.query.sort_direction as string);
+    if (req.query.voice_type)     params.set("voice_type",     req.query.voice_type as string);
+    if (req.query.category)       params.set("category",       req.query.category as string);
+
+    const response = await fetch(`https://api.elevenlabs.io/v2/voices?${params.toString()}`, {
       headers: { "xi-api-key": apiKey },
     });
     if (!response.ok) {
