@@ -644,6 +644,11 @@ const AIProfileScreen: React.FC = () => {
   const [elevenLabsVoices, setElevenLabsVoices] = useState<any[]>([]);
   const [isLoadingElevenLabsVoices, setIsLoadingElevenLabsVoices] = useState(false);
   const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState<string>(aiProfile.asyncVoiceId || '');
+  const [elSearchFilter, setElSearchFilter] = useState('');
+  const [elCategoryFilter, setElCategoryFilter] = useState('');
+  const [elVoiceTypeFilter, setElVoiceTypeFilter] = useState('');
+  const [elSort, setElSort] = useState<'name' | 'created_at_unix'>('name');
+  const [elSortDir, setElSortDir] = useState<'asc' | 'desc'>('asc');
   const [genderFilter, setGenderFilter] = useState<string>('');
   const [languageFilter, setLanguageFilter] = useState<string>('');
   const [accentFilter, setAccentFilter] = useState<string>('');
@@ -753,7 +758,13 @@ const AIProfileScreen: React.FC = () => {
     if (!elevenLabsApiKey) return;
     setIsLoadingElevenLabsVoices(true);
     try {
-      const voices = await listElevenLabsVoices(elevenLabsApiKey);
+      const voices = await listElevenLabsVoices(elevenLabsApiKey, {
+        search: elSearchFilter || undefined,
+        sort: elSort,
+        sort_direction: elSortDir,
+        voice_type: elVoiceTypeFilter as any || undefined,
+        category: elCategoryFilter as any || undefined,
+      });
       setElevenLabsVoices(voices);
     } catch (error: any) {
       addToast({ title: "ElevenLabs Error", message: error.message || "Failed to load voices.", type: "error" });
@@ -761,14 +772,14 @@ const AIProfileScreen: React.FC = () => {
       setIsLoadingElevenLabsVoices(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [elevenLabsApiKey]);
+  }, [elevenLabsApiKey, elSearchFilter, elCategoryFilter, elVoiceTypeFilter, elSort, elSortDir]);
 
   useEffect(() => {
     if (voiceProvider === 'elevenlabs' && elevenLabsApiKey) {
       fetchElevenLabsVoices();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceProvider, elevenLabsApiKey]);
+  }, [voiceProvider, elevenLabsApiKey, elSearchFilter, elCategoryFilter, elVoiceTypeFilter, elSort, elSortDir]);
 
   return (
     <div className="flex flex-col lg:flex-row h-full w-full mx-auto bg-transparent transition-colors duration-500 overflow-y-auto lg:overflow-hidden p-4 sm:p-6 gap-4 sm:gap-6">
@@ -1685,6 +1696,40 @@ const AIProfileScreen: React.FC = () => {
                                             Refresh
                                         </button>
                                     </div>
+
+                                    {/* Filters */}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <input
+                                            type="text"
+                                            placeholder="Search voices…"
+                                            value={elSearchFilter}
+                                            onChange={(e) => setElSearchFilter(e.target.value)}
+                                            className="col-span-2 text-xs p-1.5 rounded border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100"
+                                        />
+                                        <select className="text-xs p-1 rounded border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100" value={elCategoryFilter} onChange={(e) => setElCategoryFilter(e.target.value)}>
+                                            <option value="">All categories</option>
+                                            <option value="premade">Premade</option>
+                                            <option value="cloned">Cloned</option>
+                                            <option value="generated">Generated</option>
+                                            <option value="professional">Professional</option>
+                                        </select>
+                                        <select className="text-xs p-1 rounded border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100" value={elVoiceTypeFilter} onChange={(e) => setElVoiceTypeFilter(e.target.value)}>
+                                            <option value="">All types</option>
+                                            <option value="personal">My voices</option>
+                                            <option value="community">Community</option>
+                                            <option value="default">Default</option>
+                                        </select>
+                                        <select className="text-xs p-1 rounded border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100" value={elSort} onChange={(e) => setElSort(e.target.value as any)}>
+                                            <option value="name">Sort: Name</option>
+                                            <option value="created_at_unix">Sort: Date</option>
+                                        </select>
+                                        <select className="text-xs p-1 rounded border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100" value={elSortDir} onChange={(e) => setElSortDir(e.target.value as any)}>
+                                            <option value="asc">A → Z / Oldest</option>
+                                            <option value="desc">Z → A / Newest</option>
+                                        </select>
+                                    </div>
+
+                                    {/* Voice list */}
                                     {isLoadingElevenLabsVoices ? (
                                         <div className="flex justify-center py-4">
                                             <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
@@ -1702,10 +1747,12 @@ const AIProfileScreen: React.FC = () => {
                                                     className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${elevenLabsVoiceId === v.voice_id ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-100 dark:hover:bg-indigo-800'}`}
                                                 >
                                                     <div className="flex-1 min-w-0">
-                                                        <span className="text-sm font-bold text-indigo-900 dark:text-indigo-100 truncate">{v.name}</span>
-                                                        {v.labels?.accent && <span className="text-xs text-indigo-500 ml-2">{v.labels.accent}</span>}
+                                                        <span className="text-sm font-bold text-indigo-900 dark:text-indigo-100 truncate block">{v.name}</span>
+                                                        <span className="text-[10px] text-indigo-400 dark:text-indigo-500">
+                                                            {[v.category, v.labels?.accent, v.labels?.gender].filter(Boolean).join(' · ')}
+                                                        </span>
                                                     </div>
-                                                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${elevenLabsVoiceId === v.voice_id ? 'border-indigo-600 bg-indigo-600' : 'border-indigo-300 dark:border-indigo-700'}`}>
+                                                    <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ml-2 ${elevenLabsVoiceId === v.voice_id ? 'border-indigo-600 bg-indigo-600' : 'border-indigo-300 dark:border-indigo-700'}`}>
                                                         {elevenLabsVoiceId === v.voice_id && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                                                     </div>
                                                 </div>
@@ -1713,9 +1760,10 @@ const AIProfileScreen: React.FC = () => {
                                         </div>
                                     ) : (
                                         <p className="text-xs text-center text-indigo-500 dark:text-indigo-400 py-4">
-                                            {elevenLabsApiKey ? 'No voices found. Tap Refresh.' : 'Add your ElevenLabs API key in Settings first.'}
+                                            {elevenLabsApiKey ? 'No voices found. Try different filters.' : 'Add your ElevenLabs API key in Settings first.'}
                                         </p>
                                     )}
+
                                     <div className="flex justify-center">
                                         <button
                                             onClick={handleTestVoice}
@@ -1727,11 +1775,9 @@ const AIProfileScreen: React.FC = () => {
                                         </button>
                                     </div>
 
-                                    {/* Custom voice ID input */}
+                                    {/* Custom voice ID */}
                                     <div className="border-t border-indigo-100 dark:border-indigo-800 pt-3">
-                                        <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">
-                                            Custom Voice ID
-                                        </label>
+                                        <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Custom Voice ID</label>
                                         <div className="flex gap-2">
                                             <input
                                                 type="text"
@@ -1753,7 +1799,7 @@ const AIProfileScreen: React.FC = () => {
                                             </button>
                                         </div>
                                         <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-1">
-                                            Find voice IDs on your ElevenLabs dashboard under Voices. This lets you use any voice including ones you've created there.
+                                            Find voice IDs on your ElevenLabs dashboard. Works for any voice including ones you've created there.
                                         </p>
                                     </div>
                                 </div>
