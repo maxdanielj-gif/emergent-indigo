@@ -804,7 +804,53 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// ── Claude AI: persona analysis ───────────────────────────────────────────────
+// ── HuggingFace: image generation ────────────────────────────────────────────
+app.post("/api/image/generate", express.json(), async (req, res) => {
+  const { prompt, model, negativePrompt, width, height, apiKey: userApiKey } = req.body;
+  if (!prompt) return res.status(400).json({ error: "Prompt is required." });
+
+  const apiKey = userApiKey || process.env.HUGGINGFACE_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "HuggingFace API token not configured. Add it in Settings." });
+
+  const modelId = model || "black-forest-labs/FLUX.1-schnell";
+
+  try {
+    const body: any = { inputs: prompt };
+    if (negativePrompt) body.parameters = { negative_prompt: negativePrompt };
+    if (width || height) body.parameters = { ...body.parameters, width: width || 1024, height: height || 1024 };
+
+    const response = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "x-wait-for-model": "true", // wait instead of returning 503 if model is loading
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`HF image error ${response.status}:`, errText);
+      // Friendly error for common cases
+      if (response.status === 503) return res.status(503).json({ error: "Model is loading, please try again in a moment." });
+      if (response.status === 401) return res.status(401).json({ error: "Invalid HuggingFace token. Check your token in Settings." });
+      return res.status(response.status).json({ error: `Image generation failed: ${errText}` });
+    }
+
+    // Response is raw image bytes — convert to base64 to send as JSON
+    const imageBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(imageBuffer).toString("base64");
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+
+    res.json({ image: base64, mimeType: contentType, model: modelId });
+  } catch (e: any) {
+    console.error("HF image generation error:", e);
+    res.status(500).json({ error: e.message || "Failed to generate image." });
+  }
+});
+
+
 app.post("/api/analyze-persona", async (req, res) => {
   const { messages, aiProfile, anthropicKey: clientKey } = req.body;
   if (!aiProfile || !messages) return res.status(400).json({ error: "AI Profile and messages are required." });
