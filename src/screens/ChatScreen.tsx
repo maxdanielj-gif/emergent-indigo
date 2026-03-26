@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Send, Image as ImageIcon, Mic, Paperclip, Volume2, RotateCcw, Edit2, X, FileText, CheckCheck, Loader2, Camera, Trash2, ExternalLink, Plus, MessageSquare, History, MoreVertical, ChevronLeft, ChevronRight, Search, Star, Headphones, ArrowDown, Sparkles } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useChat } from '../context/ChatContext';
-import { generateAsyncSpeech } from '../services/asyncService';
+import { generateAsyncSpeech, generateElevenLabsSpeech } from '../services/asyncService';
 import { showNativeNotification } from '../services/notificationService';
 import ChatMessageItem from '../components/ChatMessageItem';
 import ImageModal from '../components/ImageModal';
@@ -14,7 +14,7 @@ const ChatScreen: React.FC = () => {
   const { 
     aiProfile, userProfile, knowledgeBase, 
     addToKnowledgeBase, addToGallery, apiKey, asyncApiKey, openRouterApiKey, 
-    anthropicApiKey, kaggleApiKey, openaiApiKey, stabilityApiKey,
+    anthropicApiKey, geminiApiKey, elevenLabsApiKey, kaggleApiKey, openaiApiKey, stabilityApiKey,
     memories, journal, 
     addJournalEntry, addMemory, showTimestamps, timeZone, addToast,
     setAIProfile, setLastInteractionTime
@@ -236,23 +236,35 @@ const ChatScreen: React.FC = () => {
 
   // Text to Speech
   const speakMessage = async (text: string, messageId: string) => {
-    if (aiProfile.voiceProvider === 'async' && aiProfile.asyncVoiceId) {
-        try {
-            const audioBlob = await generateAsyncSpeech(text, aiProfile.asyncVoiceId, asyncApiKey);
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const audio = new Audio(audioUrl);
-            audio.onended = () => {
-                setReadMessages(prev => new Set(prev).add(messageId));
-                if (isHandsFree) setTimeout(() => toggleListening(true), 500);
-                URL.revokeObjectURL(audioUrl);
-            };
-            audio.play();
-        } catch (error) {
-            console.error("Async TTS Error:", error);
-            speakWithBrowser(text, messageId);
-        }
-    } else {
+    const onEnd = () => {
+      setReadMessages(prev => new Set(prev).add(messageId));
+      if (isHandsFree) setTimeout(() => toggleListening(true), 500);
+    };
+
+    if (aiProfile.voiceProvider === 'elevenlabs' && aiProfile.asyncVoiceId) {
+      try {
+        const blob = await generateElevenLabsSpeech(text, aiProfile.asyncVoiceId, elevenLabsApiKey);
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.onended = () => { onEnd(); URL.revokeObjectURL(url); };
+        audio.onerror = () => { URL.revokeObjectURL(url); speakWithBrowser(text, messageId); };
+        audio.play();
+      } catch {
         speakWithBrowser(text, messageId);
+      }
+    } else if (aiProfile.voiceProvider === 'async' && aiProfile.asyncVoiceId) {
+      try {
+        const blob = await generateAsyncSpeech(text, aiProfile.asyncVoiceId, asyncApiKey);
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.onended = () => { onEnd(); URL.revokeObjectURL(url); };
+        audio.onerror = () => { URL.revokeObjectURL(url); speakWithBrowser(text, messageId); };
+        audio.play();
+      } catch {
+        speakWithBrowser(text, messageId);
+      }
+    } else {
+      speakWithBrowser(text, messageId);
     }
   };
 
@@ -337,6 +349,7 @@ const ChatScreen: React.FC = () => {
           aiProfile: overrideAIProfile || aiProfile,
           userProfile,
           anthropicKey: anthropicApiKey || undefined,
+          geminiKey: geminiApiKey || undefined,
           attachments: attachments.length > 0 ? attachments : undefined,
           timeZone,
         }),
@@ -396,6 +409,7 @@ const ChatScreen: React.FC = () => {
             aiMsg: modelMsg.content,
             aiProfile, userProfile, timeZone,
             anthropicKey: anthropicApiKey || undefined,
+          geminiKey: geminiApiKey || undefined,
           }),
         });
         if (res.ok) {
@@ -423,6 +437,7 @@ const ChatScreen: React.FC = () => {
           aiProfile, userProfile,
           existingMemories: memories,
           anthropicKey: anthropicApiKey || undefined,
+          geminiKey: geminiApiKey || undefined,
         }),
       });
       if (res.ok) {

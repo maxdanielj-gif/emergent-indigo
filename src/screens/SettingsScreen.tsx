@@ -12,6 +12,8 @@ const SettingsScreen: React.FC = () => {
     importData, knowledgeBase, addToKnowledgeBase,
     asyncApiKey, setAsyncApiKey,
     anthropicApiKey, setAnthropicApiKey,
+    elevenLabsApiKey, setElevenLabsApiKey,
+    geminiApiKey, setGeminiApiKey,
     setShowTutorial,
     autoSaveChat, setAutoSaveChat, autoSaveChatInterval, setAutoSaveChatInterval,
     autoJsonBackup, setAutoJsonBackup, autoJsonBackupInterval, setAutoJsonBackupInterval,
@@ -33,12 +35,16 @@ const SettingsScreen: React.FC = () => {
   const fileInputRef  = useRef<HTMLInputElement>(null);
   const kbInputRef    = useRef<HTMLInputElement>(null);
 
-  const [localAsyncApiKey,     setLocalAsyncApiKey]     = useState(asyncApiKey || '');
-  const [localAnthropicApiKey, setLocalAnthropicApiKey] = useState(anthropicApiKey || '');
+  const [localAsyncApiKey,      setLocalAsyncApiKey]      = useState(asyncApiKey || '');
+  const [localAnthropicApiKey,  setLocalAnthropicApiKey]  = useState(anthropicApiKey || '');
+  const [localElevenLabsApiKey, setLocalElevenLabsApiKey] = useState(elevenLabsApiKey || '');
+  const [localGeminiApiKey,     setLocalGeminiApiKey]     = useState(geminiApiKey || '');
 
   // Sync local key fields once the context loads saved values from IndexedDB
   React.useEffect(() => { setLocalAnthropicApiKey(anthropicApiKey || ''); }, [anthropicApiKey]);
   React.useEffect(() => { setLocalAsyncApiKey(asyncApiKey || ''); }, [asyncApiKey]);
+  React.useEffect(() => { setLocalElevenLabsApiKey(elevenLabsApiKey || ''); }, [elevenLabsApiKey]);
+  React.useEffect(() => { setLocalGeminiApiKey(geminiApiKey || ''); }, [geminiApiKey]);
   const [localSyncId,          setLocalSyncId]          = useState(userId || '');
   const [recoveryId,           setRecoveryId]           = useState('');
   const [isExporting,          setIsExporting]          = useState(false);
@@ -108,6 +114,16 @@ const SettingsScreen: React.FC = () => {
   const handleSaveAsyncKey = () => {
     setAsyncApiKey(localAsyncApiKey.trim() || null);
     addToast({ title: 'Saved', message: 'Async API key saved.', type: 'success' });
+  };
+
+  const handleSaveElevenLabsKey = () => {
+    setElevenLabsApiKey(localElevenLabsApiKey.trim() || null);
+    addToast({ title: 'Saved', message: 'ElevenLabs API key saved.', type: 'success' });
+  };
+
+  const handleSaveGeminiKey = () => {
+    setGeminiApiKey(localGeminiApiKey.trim() || null);
+    addToast({ title: 'Saved', message: 'Gemini API key saved.', type: 'success' });
   };
 
   // ── Notifications ────────────────────────────────────────────────
@@ -323,7 +339,7 @@ const SettingsScreen: React.FC = () => {
             {/* Async */}
             <div>
               <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
-                Async API Key <span className="text-indigo-400 dark:text-indigo-500 font-normal">(required for high-quality TTS)</span>
+                Async API Key <span className="text-indigo-400 dark:text-indigo-500 font-normal">(required for Async TTS)</span>
               </label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -338,6 +354,52 @@ const SettingsScreen: React.FC = () => {
                 </div>
                 <button onClick={handleSaveAsyncKey} className="app-btn-primary">Save</button>
               </div>
+            </div>
+
+            {/* ElevenLabs */}
+            <div>
+              <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                ElevenLabs API Key <span className="text-indigo-400 dark:text-indigo-500 font-normal">(optional — for ElevenLabs TTS)</span>
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
+                  <input
+                    type="password"
+                    value={localElevenLabsApiKey}
+                    onChange={(e) => setLocalElevenLabsApiKey(e.target.value)}
+                    placeholder="Your ElevenLabs API key"
+                    className="app-input pl-9"
+                  />
+                </div>
+                <button onClick={handleSaveElevenLabsKey} className="app-btn-primary">Save</button>
+              </div>
+              <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
+                Get a key at <a href="https://elevenlabs.io" target="_blank" rel="noreferrer" className="underline">elevenlabs.io</a>. Used as an alternative TTS engine in Voice Settings.
+              </p>
+            </div>
+
+            {/* Gemini */}
+            <div>
+              <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                Gemini API Key <span className="text-indigo-400 dark:text-indigo-500 font-normal">(optional — for Gemini chat models)</span>
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
+                  <input
+                    type="password"
+                    value={localGeminiApiKey}
+                    onChange={(e) => setLocalGeminiApiKey(e.target.value)}
+                    placeholder="Your Gemini API key"
+                    className="app-input pl-9"
+                  />
+                </div>
+                <button onClick={handleSaveGeminiKey} className="app-btn-primary">Save</button>
+              </div>
+              <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
+                Get a key at <a href="https://aistudio.google.com" target="_blank" rel="noreferrer" className="underline">aistudio.google.com</a>. Enables Gemini models in AI Profile settings, and auto-fallback if Claude is unavailable.
+              </p>
             </div>
 
           </div>

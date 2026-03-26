@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { generateAsyncSpeech, listAsyncVoices, cloneAsyncVoice } from '../services/asyncService';
+import { generateAsyncSpeech, listAsyncVoices, cloneAsyncVoice, generateElevenLabsSpeech, listElevenLabsVoices } from '../services/asyncService';
 import { useApp } from '../context/AppContext';
 import { useChat } from '../context/ChatContext';
 import { AIProfile, Background, ChatMessage, ChatSession } from '../types';
@@ -29,7 +29,7 @@ const AIProfileScreen: React.FC = () => {
   const { 
     aiProfile, setAIProfile, savePersona, deletePersona, savedPersonas, loadPersona, 
     asyncApiKey, setAmbientMode, setAmbientFrequency, addToast,
-    anthropicApiKey, userId
+    anthropicApiKey, elevenLabsApiKey, geminiApiKey, userId
   } = useApp();
   const { chatHistory, sessions, activeSessionId, setChatHistory, setSessions, setActiveSessionId } = useChat();
   const [name, setName] = useState(aiProfile.name);
@@ -48,7 +48,7 @@ const AIProfileScreen: React.FC = () => {
   const [autoReadMessages, setAutoReadMessages] = useState(aiProfile.autoReadMessages || false);
   const [voiceGender, setVoiceGender] = useState<'male' | 'female' | 'none'>(aiProfile.voiceGender || 'none');
   const [voiceDescription, setVoiceDescription] = useState(aiProfile.voiceDescription || '');
-  const [voiceProvider, setVoiceProvider] = useState<'browser' | 'async'>(
+  const [voiceProvider, setVoiceProvider] = useState<'browser' | 'async' | 'elevenlabs'>(
     (aiProfile.voiceProvider === 'gemini' ? 'browser' : aiProfile.voiceProvider) || 'browser'
   );
   const [asyncVoiceId, setAsyncVoiceId] = useState(aiProfile.asyncVoiceId || null);
@@ -138,8 +138,19 @@ const AIProfileScreen: React.FC = () => {
         audio.onerror = () => { setIsTestingVoice(false); URL.revokeObjectURL(audioUrl); };
         audio.play().catch(() => setIsTestingVoice(false));
       } catch (error: any) {
-        console.error("Async TTS Error:", error);
         addToast({ title: "Voice Error", message: error.message || "Async TTS failed.", type: "error" });
+        setIsTestingVoice(false);
+      }
+    } else if (voiceProvider === 'elevenlabs' && elevenLabsVoiceId) {
+      try {
+        const audioBlob = await generateElevenLabsSpeech(text, elevenLabsVoiceId, elevenLabsApiKey);
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.onended = () => { setIsTestingVoice(false); URL.revokeObjectURL(audioUrl); };
+        audio.onerror = () => { setIsTestingVoice(false); URL.revokeObjectURL(audioUrl); };
+        audio.play().catch(() => setIsTestingVoice(false));
+      } catch (error: any) {
+        addToast({ title: "Voice Error", message: error.message || "ElevenLabs TTS failed.", type: "error" });
         setIsTestingVoice(false);
       }
     } else {
@@ -629,6 +640,9 @@ const AIProfileScreen: React.FC = () => {
   const [isLoadingLibraryVoices, setIsLoadingLibraryVoices] = useState(false);
   const [isLoadingAsyncVoices, setIsLoadingAsyncVoices] = useState(false);
   const [asyncVoices, setAsyncVoices] = useState<any[]>([]);
+  const [elevenLabsVoices, setElevenLabsVoices] = useState<any[]>([]);
+  const [isLoadingElevenLabsVoices, setIsLoadingElevenLabsVoices] = useState(false);
+  const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState<string>(aiProfile.asyncVoiceId || '');
   const [genderFilter, setGenderFilter] = useState<string>('');
   const [languageFilter, setLanguageFilter] = useState<string>('');
   const [accentFilter, setAccentFilter] = useState<string>('');
@@ -733,6 +747,27 @@ const AIProfileScreen: React.FC = () => {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [genderFilter, languageFilter, accentFilter, styleFilter, voiceProvider, asyncApiKey]);
+
+  const fetchElevenLabsVoices = useCallback(async () => {
+    if (!elevenLabsApiKey) return;
+    setIsLoadingElevenLabsVoices(true);
+    try {
+      const voices = await listElevenLabsVoices(elevenLabsApiKey);
+      setElevenLabsVoices(voices);
+    } catch (error: any) {
+      addToast({ title: "ElevenLabs Error", message: error.message || "Failed to load voices.", type: "error" });
+    } finally {
+      setIsLoadingElevenLabsVoices(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elevenLabsApiKey]);
+
+  useEffect(() => {
+    if (voiceProvider === 'elevenlabs' && elevenLabsApiKey) {
+      fetchElevenLabsVoices();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceProvider, elevenLabsApiKey]);
 
   return (
     <div className="flex flex-col lg:flex-row h-full w-full mx-auto bg-transparent transition-colors duration-500 overflow-y-auto lg:overflow-hidden p-4 sm:p-6 gap-4 sm:gap-6">
@@ -1244,6 +1279,10 @@ const AIProfileScreen: React.FC = () => {
                                 <option value="claude-sonnet-4-6">Claude Sonnet (Recommended)</option>
                                 <option value="claude-opus-4-6">Claude Opus (Most capable)</option>
                                 <option value="claude-haiku-4-5-20251001">Claude Haiku (Fastest)</option>
+                                <option disabled value="">── Gemini (requires Gemini key) ──</option>
+                                <option value="gemini-2.0-flash">Gemini 2.0 Flash (Fast)</option>
+                                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Capable)</option>
+                                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Fastest)</option>
                             </select>
                         </div>
                         
@@ -1366,10 +1405,10 @@ const AIProfileScreen: React.FC = () => {
                                             setVoiceProvider('browser');
                                             setAIProfile({ ...aiProfile, voiceProvider: 'browser' });
                                         }}
-                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'browser' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
+                                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'browser' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
                                     >
-                                        <Volume2 className={`w-4 h-4 mr-2 ${voiceProvider === 'browser' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} />
-                                        Browser (Free)
+                                        <Volume2 className="w-3 h-3 mr-1" />
+                                        Browser
                                     </button>
                                     <button 
                                         onClick={() => {
@@ -1377,16 +1416,27 @@ const AIProfileScreen: React.FC = () => {
                                             setAIProfile({ ...aiProfile, voiceProvider: 'async' });
                                             if (asyncVoices.length === 0) fetchAsyncVoices();
                                         }}
-                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'async' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
+                                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'async' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
                                     >
-                                        <Mic className={`w-4 h-4 mr-2 ${voiceProvider === 'async' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} />
-                                        Async API
+                                        <Mic className="w-3 h-3 mr-1" />
+                                        Async
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            setVoiceProvider('elevenlabs');
+                                            setAIProfile({ ...aiProfile, voiceProvider: 'elevenlabs' });
+                                            if (elevenLabsVoices.length === 0) fetchElevenLabsVoices();
+                                        }}
+                                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'elevenlabs' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
+                                    >
+                                        <Headphones className="w-3 h-3 mr-1" />
+                                        ElevenLabs
                                     </button>
                                 </div>
                                 <p className="mt-2 text-[10px] text-indigo-500 dark:text-indigo-400">
-                                    {voiceProvider === 'async'
-                                        ? "High-quality Async API voices. Requires an Async API key in Settings."
-                                        : "Uses your device's built-in speech engine. No API key required."}
+                                    {voiceProvider === 'async' && "High-quality Async API voices. Requires an Async API key in Settings."}
+                                    {voiceProvider === 'elevenlabs' && "Premium ElevenLabs voices. Requires an ElevenLabs API key in Settings."}
+                                    {voiceProvider === 'browser' && "Uses your device's built-in speech engine. No API key required."}
                                 </p>
                             </div>
 
@@ -1623,6 +1673,57 @@ const AIProfileScreen: React.FC = () => {
                                                 </button>
                                             </div>
                                         )}
+                                    </div>
+                                </div>
+                            ) : voiceProvider === 'elevenlabs' ? (
+                                <div className="p-4 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-lg space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-sm font-bold text-indigo-900 dark:text-indigo-100">ElevenLabs Voices</label>
+                                        <button onClick={fetchElevenLabsVoices} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center">
+                                            <RotateCcw className="w-3 h-3 mr-1" />
+                                            Refresh
+                                        </button>
+                                    </div>
+                                    {isLoadingElevenLabsVoices ? (
+                                        <div className="flex justify-center py-4">
+                                            <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                                        </div>
+                                    ) : elevenLabsVoices.length > 0 ? (
+                                        <div className="space-y-1 max-h-60 overflow-y-auto">
+                                            {elevenLabsVoices.map((v: any) => (
+                                                <div
+                                                    key={v.voice_id}
+                                                    onClick={() => {
+                                                        setElevenLabsVoiceId(v.voice_id);
+                                                        setAsyncVoiceId(v.voice_id);
+                                                        setAIProfile({ ...aiProfile, asyncVoiceId: v.voice_id, voiceProvider: 'elevenlabs' });
+                                                    }}
+                                                    className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${elevenLabsVoiceId === v.voice_id ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-100 dark:hover:bg-indigo-800'}`}
+                                                >
+                                                    <div className="flex-1 min-w-0">
+                                                        <span className="text-sm font-bold text-indigo-900 dark:text-indigo-100 truncate">{v.name}</span>
+                                                        {v.labels?.accent && <span className="text-xs text-indigo-500 ml-2">{v.labels.accent}</span>}
+                                                    </div>
+                                                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${elevenLabsVoiceId === v.voice_id ? 'border-indigo-600 bg-indigo-600' : 'border-indigo-300 dark:border-indigo-700'}`}>
+                                                        {elevenLabsVoiceId === v.voice_id && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-center text-indigo-500 dark:text-indigo-400 py-4">
+                                            {elevenLabsApiKey ? 'No voices found. Tap Refresh.' : 'Add your ElevenLabs API key in Settings first.'}
+                                        </p>
+                                    )}
+                                    <div className="flex justify-center">
+                                        <button
+                                            onClick={handleTestVoice}
+                                            disabled={isTestingVoice || !elevenLabsVoiceId}
+                                            className="flex items-center space-x-2 py-2 px-6 bg-indigo-600 text-white rounded-full text-sm font-medium hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-md"
+                                        >
+                                            {isTestingVoice ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                                            <span>Test ElevenLabs Voice</span>
+                                        </button>
                                     </div>
                                 </div>
                             ) : (
