@@ -122,6 +122,14 @@ export interface ElevenLabsVoice {
   labels: Record<string, string>;
 }
 
+export interface ElevenLabsVoiceParams {
+  search?: string;
+  sort?: 'name' | 'created_at_unix';
+  sort_direction?: 'asc' | 'desc';
+  voice_type?: 'personal' | 'community' | 'default' | 'non-default';
+  category?: 'premade' | 'cloned' | 'generated' | 'professional';
+}
+
 export const generateElevenLabsSpeech = async (
   text: string,
   voiceId: string,
@@ -144,10 +152,20 @@ export const generateElevenLabsSpeech = async (
   return await res.blob();
 };
 
-export const listElevenLabsVoices = async (apiKey?: string | null): Promise<ElevenLabsVoice[]> => {
+export const listElevenLabsVoices = async (
+  apiKey?: string | null,
+  params: ElevenLabsVoiceParams = {}
+): Promise<ElevenLabsVoice[]> => {
   if (!apiKey) throw new Error("ElevenLabs API key not set. Add it in Settings.");
 
-  const res = await fetch(`/api/tts/elevenlabs/voices?api_key=${encodeURIComponent(apiKey)}`);
+  const qs = new URLSearchParams({ api_key: apiKey });
+  if (params.search)         qs.set('search',         params.search);
+  if (params.sort)           qs.set('sort',           params.sort);
+  if (params.sort_direction) qs.set('sort_direction', params.sort_direction);
+  if (params.voice_type)     qs.set('voice_type',     params.voice_type);
+  if (params.category)       qs.set('category',       params.category);
+
+  const res = await fetch(`/api/tts/elevenlabs/voices?${qs.toString()}`);
   if (!res.ok) {
     let errMsg = `Failed to fetch ElevenLabs voices (${res.status})`;
     try { const err = await res.json(); errMsg = err.error || errMsg; } catch {}
