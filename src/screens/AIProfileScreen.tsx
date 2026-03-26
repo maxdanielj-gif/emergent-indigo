@@ -16,6 +16,7 @@ import {
   RotateCcw, 
   HelpCircle,
   Volume2,
+  Headphones,
   Settings,
   ChevronDown,
   ChevronUp,
@@ -1724,6 +1725,36 @@ const AIProfileScreen: React.FC = () => {
                                             {isTestingVoice ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                                             <span>Test ElevenLabs Voice</span>
                                         </button>
+                                    </div>
+
+                                    {/* Custom voice ID input */}
+                                    <div className="border-t border-indigo-100 dark:border-indigo-800 pt-3">
+                                        <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                                            Custom Voice ID
+                                        </label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={elevenLabsVoiceId}
+                                                onChange={(e) => setElevenLabsVoiceId(e.target.value)}
+                                                placeholder="Paste a voice ID from elevenlabs.io"
+                                                className="flex-1 p-2 border border-indigo-300 dark:border-indigo-700 rounded-lg bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    if (!elevenLabsVoiceId.trim()) return;
+                                                    setAsyncVoiceId(elevenLabsVoiceId.trim());
+                                                    setAIProfile({ ...aiProfile, asyncVoiceId: elevenLabsVoiceId.trim(), voiceProvider: 'elevenlabs' });
+                                                    addToast({ title: 'Voice Set', message: 'Custom ElevenLabs voice ID saved.', type: 'success' });
+                                                }}
+                                                className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                                            >
+                                                Use
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-1">
+                                            Find voice IDs on your ElevenLabs dashboard under Voices. This lets you use any voice including ones you've created there.
+                                        </p>
                                     </div>
                                 </div>
                             ) : (
