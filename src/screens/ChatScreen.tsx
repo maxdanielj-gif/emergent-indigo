@@ -243,7 +243,7 @@ const ChatScreen: React.FC = () => {
 
     if (aiProfile.voiceProvider === 'elevenlabs' && aiProfile.asyncVoiceId) {
       try {
-        const blob = await generateElevenLabsSpeech(text, aiProfile.asyncVoiceId, elevenLabsApiKey);
+        const blob = await generateElevenLabsSpeech(text, aiProfile.asyncVoiceId, elevenLabsApiKey, aiProfile.elevenLabsModelId || 'eleven_v3');
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         audio.onended = () => { onEnd(); URL.revokeObjectURL(url); };

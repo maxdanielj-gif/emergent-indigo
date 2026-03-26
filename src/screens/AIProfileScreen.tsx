@@ -144,7 +144,7 @@ const AIProfileScreen: React.FC = () => {
       }
     } else if (voiceProvider === 'elevenlabs' && elevenLabsVoiceId) {
       try {
-        const audioBlob = await generateElevenLabsSpeech(text, elevenLabsVoiceId, elevenLabsApiKey);
+        const audioBlob = await generateElevenLabsSpeech(text, elevenLabsVoiceId, elevenLabsApiKey, elevenLabsModelId);
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
         audio.onended = () => { setIsTestingVoice(false); URL.revokeObjectURL(audioUrl); };
@@ -220,6 +220,7 @@ const AIProfileScreen: React.FC = () => {
     setAiCanUseBlogger(aiProfile.aiCanUseBlogger || false);
     setAiCanGenerateSpeech(aiProfile.aiCanGenerateSpeech ?? true);
     setTextOnlyMode(aiProfile.textOnlyMode ?? false);
+    setElevenLabsModelId(aiProfile.elevenLabsModelId || 'eleven_v3');
     setKnowsItsAI(aiProfile.knowsItsAI ?? true);
     setReferenceImage(aiProfile.referenceImage);
     setModel(validateModel(aiProfile.model));
@@ -300,6 +301,7 @@ const AIProfileScreen: React.FC = () => {
       backgroundImages,
       aiCanGenerateSpeech,
       textOnlyMode,
+      elevenLabsModelId,
       aiCanUseTools: aiProfile.aiCanUseTools,
       aiCanBrowse: aiProfile.aiCanBrowse,
       chatHistory: aiProfile.chatHistory,
@@ -366,6 +368,7 @@ const AIProfileScreen: React.FC = () => {
       backgroundImages,
       aiCanGenerateSpeech,
       textOnlyMode,
+      elevenLabsModelId,
       aiCanUseTools: aiProfile.aiCanUseTools,
       aiCanBrowse: aiProfile.aiCanBrowse,
       chatHistory: [], // New persona starts with fresh history
@@ -644,6 +647,7 @@ const AIProfileScreen: React.FC = () => {
   const [elevenLabsVoices, setElevenLabsVoices] = useState<any[]>([]);
   const [isLoadingElevenLabsVoices, setIsLoadingElevenLabsVoices] = useState(false);
   const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState<string>(aiProfile.asyncVoiceId || '');
+  const [elevenLabsModelId, setElevenLabsModelId] = useState<string>('eleven_v3');
   const [elSearchFilter, setElSearchFilter] = useState('');
   const [elCategoryFilter, setElCategoryFilter] = useState('');
   const [elVoiceTypeFilter, setElVoiceTypeFilter] = useState('');
@@ -1695,6 +1699,21 @@ const AIProfileScreen: React.FC = () => {
                                             <RotateCcw className="w-3 h-3 mr-1" />
                                             Refresh
                                         </button>
+                                    </div>
+
+                                    {/* Model selector */}
+                                    <div>
+                                        <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Model</label>
+                                        <select
+                                            value={elevenLabsModelId}
+                                            onChange={(e) => setElevenLabsModelId(e.target.value)}
+                                            className="w-full text-xs p-1.5 rounded border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100"
+                                        >
+                                            <option value="eleven_v3">Eleven v3 — Most expressive, 70+ languages (recommended)</option>
+                                            <option value="eleven_multilingual_v2">Multilingual v2 — Lifelike, 29 languages</option>
+                                            <option value="eleven_flash_v2_5">Flash v2.5 — Ultra-fast ~75ms, 32 languages</option>
+                                            <option value="eleven_flash_v2">Flash v2 — Ultra-fast, English only</option>
+                                        </select>
                                     </div>
 
                                     {/* Filters */}
