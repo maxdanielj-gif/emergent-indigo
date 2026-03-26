@@ -14,6 +14,7 @@ const SettingsScreen: React.FC = () => {
     anthropicApiKey, setAnthropicApiKey,
     elevenLabsApiKey, setElevenLabsApiKey,
     geminiApiKey, setGeminiApiKey,
+    huggingFaceApiKey, setHuggingFaceApiKey,
     setShowTutorial,
     autoSaveChat, setAutoSaveChat, autoSaveChatInterval, setAutoSaveChatInterval,
     autoJsonBackup, setAutoJsonBackup, autoJsonBackupInterval, setAutoJsonBackupInterval,
@@ -124,6 +125,11 @@ const SettingsScreen: React.FC = () => {
   const handleSaveGeminiKey = () => {
     setGeminiApiKey(localGeminiApiKey.trim() || null);
     addToast({ title: 'Saved', message: 'Gemini API key saved.', type: 'success' });
+  };
+
+  const handleSaveHuggingFaceKey = () => {
+    setHuggingFaceApiKey(localHuggingFaceApiKey.trim() || null);
+    addToast({ title: 'Saved', message: 'HuggingFace token saved.', type: 'success' });
   };
 
   // ── Notifications ────────────────────────────────────────────────
@@ -399,6 +405,29 @@ const SettingsScreen: React.FC = () => {
               </div>
               <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
                 Get a key at <a href="https://aistudio.google.com" target="_blank" rel="noreferrer" className="underline">aistudio.google.com</a>. Enables Gemini models in AI Profile settings, and auto-fallback if Claude is unavailable.
+              </p>
+            </div>
+
+            {/* HuggingFace */}
+            <div>
+              <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                HuggingFace Token <span className="text-indigo-400 dark:text-indigo-500 font-normal">(required for image generation)</span>
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
+                  <input
+                    type="password"
+                    value={localHuggingFaceApiKey}
+                    onChange={(e) => setLocalHuggingFaceApiKey(e.target.value)}
+                    placeholder="hf_..."
+                    className="app-input pl-9"
+                  />
+                </div>
+                <button onClick={handleSaveHuggingFaceKey} className="app-btn-primary">Save</button>
+              </div>
+              <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
+                Get a token at <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" className="underline">huggingface.co/settings/tokens</a>. Used for AI image generation with FLUX.
               </p>
             </div>
 
