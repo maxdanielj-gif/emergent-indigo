@@ -1400,7 +1400,7 @@ const AIProfileScreen: React.FC = () => {
                     <div className="flex items-center justify-between mb-4">
                         <div>
                             <label className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Text-Only Mode</label>
-                            <span className="block text-xs text-indigo-500 dark:text-indigo-400">No *actions* or emotes — clean speech-friendly text</span>
+                            <span className="block text-xs text-indigo-500 dark:text-indigo-400">No asterisk actions — uses [action] format instead, which works better with ElevenLabs v3</span>
                         </div>
                         <button
                             onClick={() => setTextOnlyMode(!textOnlyMode)}

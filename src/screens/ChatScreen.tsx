@@ -852,10 +852,10 @@ const ChatScreen: React.FC = () => {
         {/* Quick Actions Bar */}
         <div className="flex space-x-2 mb-4 overflow-x-auto pb-1 no-scrollbar">
             <button 
-                onClick={() => setInput("*smiles* " + input)}
+                onClick={() => setInput("[smiles] " + input)}
                 className="flex-shrink-0 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-bold border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900 transition-all active:scale-95"
             >
-                *Action*
+                [Action]
             </button>
             <button 
                 onClick={() => setInput("(OOC: ) " + input)}
