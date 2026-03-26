@@ -113,3 +113,47 @@ export const getAsyncVoice = async (voiceId: string, apiKey?: string | null): Pr
 
   return await response.json();
 };
+
+// ── ElevenLabs TTS ────────────────────────────────────────────────────────────
+export interface ElevenLabsVoice {
+  voice_id: string;
+  name: string;
+  category: string;
+  labels: Record<string, string>;
+}
+
+export const generateElevenLabsSpeech = async (
+  text: string,
+  voiceId: string,
+  apiKey?: string | null
+): Promise<Blob> => {
+  if (!apiKey) throw new Error("ElevenLabs API key not set. Add it in Settings.");
+
+  const res = await fetch('/api/tts/elevenlabs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, voiceId, apiKey }),
+  });
+
+  if (!res.ok) {
+    let errMsg = `ElevenLabs TTS failed (${res.status})`;
+    try { const err = await res.json(); errMsg = err.error || errMsg; } catch {}
+    throw new Error(errMsg);
+  }
+
+  return await res.blob();
+};
+
+export const listElevenLabsVoices = async (apiKey?: string | null): Promise<ElevenLabsVoice[]> => {
+  if (!apiKey) throw new Error("ElevenLabs API key not set. Add it in Settings.");
+
+  const res = await fetch(`/api/tts/elevenlabs/voices?api_key=${encodeURIComponent(apiKey)}`);
+  if (!res.ok) {
+    let errMsg = `Failed to fetch ElevenLabs voices (${res.status})`;
+    try { const err = await res.json(); errMsg = err.error || errMsg; } catch {}
+    throw new Error(errMsg);
+  }
+
+  const data = await res.json();
+  return data.voices || [];
+};
