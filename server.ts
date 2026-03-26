@@ -482,7 +482,7 @@ app.post("/api/tts/elevenlabs", express.json(), async (req, res) => {
   if (!apiKey) return res.status(500).json({ error: "ElevenLabs API key not configured" });
 
   try {
-    const model = modelId || "eleven_turbo_v2_5"; // fast, high quality
+    const model = modelId || "eleven_v3";
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: "POST",
       headers: {
