@@ -73,6 +73,48 @@ function validateClaudeModel(model?: string): string {
   return "claude-sonnet-4-6"; // sensible default
 }
 
+// ── Gemini client helper ──────────────────────────────────────────────────────
+const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"];
+function isGeminiModel(model?: string): boolean {
+  return !!model && (model.startsWith("gemini-") || GEMINI_MODELS.includes(model));
+}
+
+async function callGeminiChat(
+  systemPrompt: string,
+  messages: any[],
+  model: string,
+  temperature: number,
+  geminiKey?: string
+): Promise<string> {
+  const apiKey = geminiKey || process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("Gemini API key not configured. Add GEMINI_API_KEY to Render env vars or enter it in Settings.");
+
+  // Build Gemini contents array (user/model alternating)
+  const contents = messages.map((m: any) => ({
+    role: m.role === "model" ? "model" : "user",
+    parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
+  }));
+
+  const body = {
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents,
+    generationConfig: { temperature: temperature ?? 0.7, maxOutputTokens: 2048 },
+  };
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+  );
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gemini error (${res.status}): ${err}`);
+  }
+
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+}
+
 // ── Build persona system prompt ───────────────────────────────────────────────
 function buildSystemPrompt(aiProfile: any, userProfile: any, timeZone?: string): string {
   const now = new Date();
@@ -431,6 +473,68 @@ app.post("/api/tts/generate", express.json(), async (req, res) => {
 });
 
 
+// ── ElevenLabs TTS ────────────────────────────────────────────────────────────
+app.post("/api/tts/elevenlabs", express.json(), async (req, res) => {
+  const { text, voiceId, apiKey: userApiKey, modelId } = req.body;
+  if (!text || !voiceId) return res.status(400).json({ error: "Missing text or voiceId" });
+
+  const apiKey = userApiKey || process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: "ElevenLabs API key not configured" });
+
+  try {
+    const model = modelId || "eleven_turbo_v2_5"; // fast, high quality
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text,
+        model_id: model,
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`ElevenLabs TTS error: ${response.status} ${errText}`);
+      return res.status(response.status).json({ error: `ElevenLabs error: ${errText || response.statusText}` });
+    }
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    if (response.body) {
+      (Readable as any).fromWeb(response.body).pipe(res);
+    } else {
+      res.status(500).json({ error: "No audio returned from ElevenLabs" });
+    }
+  } catch (e: any) {
+    console.error("ElevenLabs TTS error:", e);
+    res.status(500).json({ error: e.message || "Failed to generate speech" });
+  }
+});
+
+// ── ElevenLabs: list voices ───────────────────────────────────────────────────
+app.get("/api/tts/elevenlabs/voices", async (req, res) => {
+  const apiKey = (req.query.api_key as string) || process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "ElevenLabs API key not configured" });
+
+  try {
+    const response = await fetch("https://api.elevenlabs.io/v1/voices", {
+      headers: { "xi-api-key": apiKey },
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Failed to fetch ElevenLabs voices" });
+  }
+});
+
 // ── Async: clone voice ────────────────────────────────────────────────────────
 app.post("/api/voices/clone", async (req, res) => {
   // This endpoint receives a base64-encoded audio file + metadata from the client,
@@ -608,22 +712,37 @@ app.get("/api/sync/:userId?", (req, res) => {
 
 // ── Claude AI: main chat ──────────────────────────────────────────────────────
 app.post("/api/chat", async (req, res) => {
-  const { messages, aiProfile, userProfile, anthropicKey: clientKey, timeZone, attachments } = req.body;
+  const { messages, aiProfile, userProfile, anthropicKey: clientKey, geminiKey, timeZone, attachments } = req.body;
   if (!aiProfile || !userProfile) {
     return res.status(400).json({ error: "AI Profile and User Profile are required." });
   }
 
+  const systemPrompt = buildSystemPrompt(aiProfile, userProfile, timeZone);
+  const selectedModel = aiProfile.model || "claude-sonnet-4-6";
+  const useGemini = isGeminiModel(selectedModel);
+
+  // ── Gemini path ───────────────────────────────────────────────────────────
+  if (useGemini) {
+    try {
+      const text = await callGeminiChat(systemPrompt, messages, selectedModel, aiProfile.temperature ?? 0.7, geminiKey);
+      return res.json({ content: text, provider: "gemini" });
+    } catch (e: any) {
+      console.error("Gemini chat error:", e.message);
+      // Auto-fallback to Claude
+      console.log("Falling back to Claude...");
+    }
+  }
+
+  // ── Claude path (primary, or fallback from Gemini) ────────────────────────
   try {
     const client = getAnthropicClient(clientKey);
-    const systemPrompt = buildSystemPrompt(aiProfile, userProfile, timeZone);
 
-    // Convert app message format to Claude format (model → assistant)
     const claudeMessages: Anthropic.MessageParam[] = messages.map((m: any) => ({
       role: m.role === "model" ? "assistant" : "user",
       content: m.content,
     }));
 
-    // If the last message has attachments, upgrade its content to a multi-part array
+    // Attach images/PDFs to last user message if present
     if (attachments?.length > 0 && claudeMessages.length > 0) {
       const last = claudeMessages[claudeMessages.length - 1];
       if (last.role === "user") {
@@ -650,7 +769,7 @@ app.post("/api/chat", async (req, res) => {
     const response = await retry(
       async () =>
         await client.messages.create({
-          model: validateClaudeModel(aiProfile.model),
+          model: validateClaudeModel(useGemini ? undefined : selectedModel),
           max_tokens: 2048,
           system: systemPrompt,
           messages: claudeMessages,
@@ -659,8 +778,18 @@ app.post("/api/chat", async (req, res) => {
     );
 
     const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-    res.json({ content: text });
+    res.json({ content: text, provider: "claude" });
   } catch (e: any) {
+    // If Claude also fails, try Gemini as last resort
+    if (!useGemini) {
+      try {
+        console.log("Claude failed, trying Gemini fallback...");
+        const text = await callGeminiChat(systemPrompt, messages, "gemini-2.0-flash", aiProfile.temperature ?? 0.7, geminiKey);
+        return res.json({ content: text, provider: "gemini-fallback" });
+      } catch (geminiErr: any) {
+        console.error("Gemini fallback also failed:", geminiErr.message);
+      }
+    }
     console.error("Chat API Error:", e.message);
     res.status(500).json({ error: e.message || "Failed to generate response." });
   }
