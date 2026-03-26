@@ -43,6 +43,7 @@ export interface AIProfile {
   proactiveBlogId?: string | null;
   aiCanGenerateSpeech?: boolean;
   textOnlyMode?: boolean;  // When true: no *actions* or roleplay emotes — clean text for TTS
+  elevenLabsModelId?: string; // ElevenLabs model to use for TTS
   knowsItsAI: boolean;
   model: string;
   llmProvider?: 'claude' | 'gemini'; // 'gemini' kept for legacy import compatibility
