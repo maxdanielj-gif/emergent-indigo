@@ -55,6 +55,10 @@ interface AppState {
   googleClientSecret: string | null;
   openRouterApiKey: string | null;
   anthropicApiKey: string | null;
+  elevenLabsApiKey: string | null;
+  setElevenLabsApiKey: (key: string | null) => void;
+  geminiApiKey: string | null;
+  setGeminiApiKey: (key: string | null) => void;
   kaggleApiKey: string | null;
   openaiApiKey: string | null;
   stabilityApiKey: string | null;
@@ -268,6 +272,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [apiKey, setApiKeyState] = useState<string | null>(null);
   const [openRouterApiKey, setOpenRouterApiKeyState] = useState<string | null>(null);
   const [anthropicApiKey, setAnthropicApiKeyState] = useState<string | null>(null);
+  const [elevenLabsApiKey, setElevenLabsApiKeyState] = useState<string | null>(null);
+  const [geminiApiKey, setGeminiApiKeyState] = useState<string | null>(null);
   const [kaggleApiKey, setKaggleApiKeyState] = useState<string | null>(null);
   const [openaiApiKey, setOpenaiApiKeyState] = useState<string | null>(null);
   const [stabilityApiKey, setStabilityApiKeyState] = useState<string | null>(null);
@@ -558,6 +564,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setProactiveCommunications(Array.isArray(savedData.proactiveCommunications) ? savedData.proactiveCommunications : []);
                 setAsyncApiKey(savedData.asyncApiKey || null);
                 setAnthropicApiKeyState(savedData.anthropicApiKey || null);
+                setElevenLabsApiKeyState(savedData.elevenLabsApiKey || null);
+                setGeminiApiKeyState(savedData.geminiApiKey || null);
                 setFirebaseProjectId(savedData.firebaseProjectId || null);
                 setFirebaseAppId(savedData.firebaseAppId || null);
                 setFirebaseMessagingSenderId(savedData.firebaseMessagingSenderId || null);
@@ -671,6 +679,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           googleClientSecret,
           openRouterApiKey,
           anthropicApiKey,
+          elevenLabsApiKey,
+          geminiApiKey,
           kaggleApiKey,
           openaiApiKey,
           stabilityApiKey,
@@ -746,14 +756,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Debounce save to avoid excessive writes
-  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId]);
+  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId]);
 
   // Debounce save to avoid excessive writes
   useEffect(() => {
     if (!isLoaded) return;
     const timeoutId = setTimeout(saveData, 1000);
     return () => clearTimeout(timeoutId);
-  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId, saveData]);
+  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId, saveData]);
 
   // Web Push notification setup — runs once after initial load
   useEffect(() => {
@@ -1604,6 +1614,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       googleClientId, googleClientSecret, setGoogleConfig,
       openRouterApiKey, setOpenRouterApiKey,
       anthropicApiKey, setAnthropicApiKey,
+      elevenLabsApiKey, setElevenLabsApiKey: setElevenLabsApiKeyState,
+      geminiApiKey, setGeminiApiKey: setGeminiApiKeyState,
       kaggleApiKey, setKaggleApiKey,
       openaiApiKey, setOpenaiApiKey,
       stabilityApiKey, setStabilityApiKey,
