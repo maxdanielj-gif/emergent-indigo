@@ -36,16 +36,18 @@ const SettingsScreen: React.FC = () => {
   const fileInputRef  = useRef<HTMLInputElement>(null);
   const kbInputRef    = useRef<HTMLInputElement>(null);
 
-  const [localAsyncApiKey,      setLocalAsyncApiKey]      = useState(asyncApiKey || '');
-  const [localAnthropicApiKey,  setLocalAnthropicApiKey]  = useState(anthropicApiKey || '');
-  const [localElevenLabsApiKey, setLocalElevenLabsApiKey] = useState(elevenLabsApiKey || '');
-  const [localGeminiApiKey,     setLocalGeminiApiKey]     = useState(geminiApiKey || '');
+  const [localAsyncApiKey,        setLocalAsyncApiKey]        = useState(asyncApiKey || '');
+  const [localAnthropicApiKey,    setLocalAnthropicApiKey]    = useState(anthropicApiKey || '');
+  const [localElevenLabsApiKey,   setLocalElevenLabsApiKey]   = useState(elevenLabsApiKey || '');
+  const [localGeminiApiKey,       setLocalGeminiApiKey]       = useState(geminiApiKey || '');
+  const [localHuggingFaceApiKey,  setLocalHuggingFaceApiKey]  = useState(huggingFaceApiKey || '');
 
   // Sync local key fields once the context loads saved values from IndexedDB
   React.useEffect(() => { setLocalAnthropicApiKey(anthropicApiKey || ''); }, [anthropicApiKey]);
   React.useEffect(() => { setLocalAsyncApiKey(asyncApiKey || ''); }, [asyncApiKey]);
   React.useEffect(() => { setLocalElevenLabsApiKey(elevenLabsApiKey || ''); }, [elevenLabsApiKey]);
   React.useEffect(() => { setLocalGeminiApiKey(geminiApiKey || ''); }, [geminiApiKey]);
+  React.useEffect(() => { setLocalHuggingFaceApiKey(huggingFaceApiKey || ''); }, [huggingFaceApiKey]);
   const [localSyncId,          setLocalSyncId]          = useState(userId || '');
   const [recoveryId,           setRecoveryId]           = useState('');
   const [isExporting,          setIsExporting]          = useState(false);
