@@ -14,7 +14,7 @@ const SettingsScreen: React.FC = () => {
     anthropicApiKey, setAnthropicApiKey,
     elevenLabsApiKey, setElevenLabsApiKey,
     geminiApiKey, setGeminiApiKey,
-    huggingFaceApiKey, setHuggingFaceApiKey,
+    shortApiKey, setShortAPIApiKey,
     setShowTutorial,
     autoSaveChat, setAutoSaveChat, autoSaveChatInterval, setAutoSaveChatInterval,
     autoJsonBackup, setAutoJsonBackup, autoJsonBackupInterval, setAutoJsonBackupInterval,
@@ -40,14 +40,14 @@ const SettingsScreen: React.FC = () => {
   const [localAnthropicApiKey,    setLocalAnthropicApiKey]    = useState(anthropicApiKey || '');
   const [localElevenLabsApiKey,   setLocalElevenLabsApiKey]   = useState(elevenLabsApiKey || '');
   const [localGeminiApiKey,       setLocalGeminiApiKey]       = useState(geminiApiKey || '');
-  const [localHuggingFaceApiKey,  setLocalHuggingFaceApiKey]  = useState(huggingFaceApiKey || '');
+  const [localShortAPIApiKey,  setLocalShortAPIApiKey]  = useState(shortApiKey || '');
 
   // Sync local key fields once the context loads saved values from IndexedDB
   React.useEffect(() => { setLocalAnthropicApiKey(anthropicApiKey || ''); }, [anthropicApiKey]);
   React.useEffect(() => { setLocalAsyncApiKey(asyncApiKey || ''); }, [asyncApiKey]);
   React.useEffect(() => { setLocalElevenLabsApiKey(elevenLabsApiKey || ''); }, [elevenLabsApiKey]);
   React.useEffect(() => { setLocalGeminiApiKey(geminiApiKey || ''); }, [geminiApiKey]);
-  React.useEffect(() => { setLocalHuggingFaceApiKey(huggingFaceApiKey || ''); }, [huggingFaceApiKey]);
+  React.useEffect(() => { setLocalShortAPIApiKey(shortApiKey || ''); }, [shortApiKey]);
   const [localSyncId,          setLocalSyncId]          = useState(userId || '');
   const [recoveryId,           setRecoveryId]           = useState('');
   const [isExporting,          setIsExporting]          = useState(false);
@@ -129,9 +129,9 @@ const SettingsScreen: React.FC = () => {
     addToast({ title: 'Saved', message: 'Gemini API key saved.', type: 'success' });
   };
 
-  const handleSaveHuggingFaceKey = () => {
-    setHuggingFaceApiKey(localHuggingFaceApiKey.trim() || null);
-    addToast({ title: 'Saved', message: 'HuggingFace token saved.', type: 'success' });
+  const handleSaveShortAPIKey = () => {
+    setShortAPIApiKey(localShortAPIApiKey.trim() || null);
+    addToast({ title: 'Saved', message: 'ShortAPI token saved.', type: 'success' });
   };
 
   // ── Notifications ────────────────────────────────────────────────
@@ -410,26 +410,26 @@ const SettingsScreen: React.FC = () => {
               </p>
             </div>
 
-            {/* HuggingFace */}
+            {/* ShortAPI */}
             <div>
               <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
-                HuggingFace Token <span className="text-indigo-400 dark:text-indigo-500 font-normal">(required for image generation)</span>
+                ShortAPI Token <span className="text-indigo-400 dark:text-indigo-500 font-normal">(required for image generation)</span>
               </label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
                   <input
                     type="password"
-                    value={localHuggingFaceApiKey}
-                    onChange={(e) => setLocalHuggingFaceApiKey(e.target.value)}
-                    placeholder="hf_..."
+                    value={localShortAPIApiKey}
+                    onChange={(e) => setLocalShortAPIApiKey(e.target.value)}
+                    placeholder="Your ShortAPI key"
                     className="app-input pl-9"
                   />
                 </div>
-                <button onClick={handleSaveHuggingFaceKey} className="app-btn-primary">Save</button>
+                <button onClick={handleSaveShortAPIKey} className="app-btn-primary">Save</button>
               </div>
               <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
-                Get a token at <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" className="underline">huggingface.co/settings/tokens</a>. Used for AI image generation with FLUX.
+                Get a key at <a href="https://shortapi.ai" target="_blank" rel="noreferrer" className="underline">shortapi.ai</a>. Enables FLUX and Midjourney image generation.
               </p>
             </div>
 
