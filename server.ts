@@ -827,48 +827,85 @@ app.get("/api/image/temp/:id", (req, res) => {
 
 // Create a ShortAPI image generation job
 app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res) => {
-  const { prompt, model, aspectRatio, negativePrompt, inputImageBase64, performance, apiKey: userApiKey } = req.body;
+  const {
+    prompt, model, aspectRatio, negativePrompt, inputImageBase64,
+    // FLUX-specific
+    fluxPerformance,
+    // MJ-specific
+    mjPerformance, stylization, chaos, weirdness,
+    imageReferenceType, styleWeight, characterWeight, omniWeight,
+    apiKey: userApiKey,
+  } = req.body;
+
   if (!prompt) return res.status(400).json({ error: "Prompt is required." });
 
   const apiKey = userApiKey || process.env.SHORTAPI_KEY;
   if (!apiKey) return res.status(400).json({ error: "ShortAPI key not configured. Add it in Settings." });
 
+  // FLUX requires a reference image — reject early with a clear message
+  const isFLUX = model === "shortapi/flux-1.0/image-to-image";
+  if (isFLUX && !inputImageBase64) {
+    return res.status(400).json({ error: "FLUX requires a reference image. Enable the reference image toggle or switch to Midjourney." });
+  }
+
   try {
     let imageUrl: string | undefined;
 
-    // If a reference image is provided, store it temporarily and get a public URL
     if (inputImageBase64) {
       const base64Data = inputImageBase64.includes(",") ? inputImageBase64.split(",")[1] : inputImageBase64;
       const mimeMatch  = inputImageBase64.match(/data:([^;]+);/);
       const mimeType   = mimeMatch ? mimeMatch[1] : "image/jpeg";
       const tempId     = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      tempImages.set(tempId, { data: base64Data, mimeType, expires: Date.now() + 15 * 60 * 1000 }); // 15 min TTL
+      tempImages.set(tempId, { data: base64Data, mimeType, expires: Date.now() + 15 * 60 * 1000 });
       const serverBase = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
       imageUrl = `${serverBase}/api/image/temp/${tempId}`;
+      console.log(`Temp image created: ${imageUrl}`);
     }
 
-    const selectedModel = model || (imageUrl ? "shortapi/flux-1.0/image-to-image" : "midjourney/midjourney-v7/image-to-image");
+    const selectedModel = model || "midjourney/midjourney-v7/image-to-image";
     const ratio = aspectRatio || "1:1";
 
     let args: any;
-    if (selectedModel === "shortapi/flux-1.0/image-to-image") {
+
+    if (isFLUX) {
+      // FLUX 1.0 — image_url is REQUIRED per the API docs
       args = {
         prompt,
+        image_url: imageUrl,
         aspect_ratio: ratio,
-        performance: performance || "dev",
-        ...(imageUrl ? { image_url: imageUrl } : {}),
+        performance: fluxPerformance || "dev",
       };
     } else {
-      // Midjourney v7
+      // Midjourney v7 — mode:"fast" is required, performance is separate
+      // Sanitize prompt: remove hyphens/special chars that MJ rejects
+      const cleanPrompt = prompt.replace(/[^\w\s.,!?'"()]/g, ' ').replace(/\s+/g, ' ').trim();
+      const cleanNeg    = negativePrompt ? negativePrompt.replace(/[^\w\s.,!?'"()]/g, ' ').trim() : undefined;
+
       args = {
-        mode: "fast",
-        prompt,
+        mode:         "fast",                          // required, always "fast"
+        prompt:       cleanPrompt,
         aspect_ratio: ratio,
-        performance: performance || "balance",
-        ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
-        ...(imageUrl ? { image_urls: [imageUrl] } : {}),
+        ...(mjPerformance             ? { performance:    mjPerformance }      : {}),
+        ...(cleanNeg                  ? { negative_prompt: cleanNeg }          : {}),
+        ...(stylization  !== undefined ? { stylization }                       : {}),
+        ...(chaos        !== undefined ? { chaos }                             : {}),
+        ...(weirdness    !== undefined ? { weirdness }                         : {}),
       };
+
+      // Reference image — goes into the appropriate field based on how user wants to use it
+      if (imageUrl) {
+        if (imageReferenceType === 'style')     args.style_image_urls     = [imageUrl];
+        else if (imageReferenceType === 'character') args.character_image_urls = [imageUrl];
+        else if (imageReferenceType === 'omni') args.omni_image_url       = imageUrl;
+        else                                    args.image_urls           = [imageUrl]; // default: standard img2img
+
+        if (imageReferenceType === 'style'     && styleWeight     !== undefined) args.style_weight     = styleWeight;
+        if (imageReferenceType === 'character' && characterWeight !== undefined) args.character_weight = characterWeight;
+        if (imageReferenceType === 'omni'      && omniWeight      !== undefined) args.omni_weight      = omniWeight;
+      }
     }
+
+    console.log(`ShortAPI job create — model: ${selectedModel}, hasImage: ${!!imageUrl}`);
 
     const response = await fetch("https://api.shortapi.ai/api/v1/job/create", {
       method: "POST",
@@ -887,6 +924,7 @@ app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res
     }
 
     const data = await response.json();
+    console.log(`ShortAPI job created: ${data.job_id}`);
     res.json({ jobId: data.job_id, model: selectedModel });
   } catch (e: any) {
     console.error("ShortAPI image generation error:", e);
