@@ -59,8 +59,8 @@ interface AppState {
   setElevenLabsApiKey: (key: string | null) => void;
   geminiApiKey: string | null;
   setGeminiApiKey: (key: string | null) => void;
-  shortApiKey: string | null;
-  setShortAPIApiKey: (key: string | null) => void;
+  freepikApiKey: string | null;
+  setFreepikApiKey: (key: string | null) => void;
   kaggleApiKey: string | null;
   openaiApiKey: string | null;
   stabilityApiKey: string | null;
@@ -276,7 +276,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [anthropicApiKey, setAnthropicApiKeyState] = useState<string | null>(null);
   const [elevenLabsApiKey, setElevenLabsApiKeyState] = useState<string | null>(null);
   const [geminiApiKey, setGeminiApiKeyState] = useState<string | null>(null);
-  const [shortApiKey, setShortAPIApiKeyState] = useState<string | null>(null);
+  const [freepikApiKey, setFreepikApiKeyState] = useState<string | null>(null);
   const [kaggleApiKey, setKaggleApiKeyState] = useState<string | null>(null);
   const [openaiApiKey, setOpenaiApiKeyState] = useState<string | null>(null);
   const [stabilityApiKey, setStabilityApiKeyState] = useState<string | null>(null);
@@ -569,7 +569,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setAnthropicApiKeyState(savedData.anthropicApiKey || null);
                 setElevenLabsApiKeyState(savedData.elevenLabsApiKey || null);
                 setGeminiApiKeyState(savedData.geminiApiKey || null);
-                setShortAPIApiKeyState(savedData.shortApiKey || null);
+                setFreepikApiKeyState(savedData.freepikApiKey || null);
                 setFirebaseProjectId(savedData.firebaseProjectId || null);
                 setFirebaseAppId(savedData.firebaseAppId || null);
                 setFirebaseMessagingSenderId(savedData.firebaseMessagingSenderId || null);
@@ -685,7 +685,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           anthropicApiKey,
           elevenLabsApiKey,
           geminiApiKey,
-          shortApiKey,
+          freepikApiKey,
           kaggleApiKey,
           openaiApiKey,
           stabilityApiKey,
@@ -761,14 +761,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Debounce save to avoid excessive writes
-  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey, shortApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId]);
+  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey, freepikApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId]);
 
   // Debounce save to avoid excessive writes
   useEffect(() => {
     if (!isLoaded) return;
     const timeoutId = setTimeout(saveData, 1000);
     return () => clearTimeout(timeoutId);
-  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey, shortApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId, saveData]);
+  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey, freepikApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId, saveData]);
 
   // Web Push notification setup — runs once after initial load
   useEffect(() => {
@@ -1621,7 +1621,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       anthropicApiKey, setAnthropicApiKey,
       elevenLabsApiKey, setElevenLabsApiKey: setElevenLabsApiKeyState,
       geminiApiKey, setGeminiApiKey: setGeminiApiKeyState,
-      shortApiKey, setShortAPIApiKey: setShortAPIApiKeyState,
+      freepikApiKey, setFreepikApiKey: setFreepikApiKeyState,
       kaggleApiKey, setKaggleApiKey,
       openaiApiKey, setOpenaiApiKey,
       stabilityApiKey, setStabilityApiKey,
