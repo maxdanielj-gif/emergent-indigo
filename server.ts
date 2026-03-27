@@ -804,79 +804,112 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// ── HuggingFace: image generation ────────────────────────────────────────────
+// ── ShortAPI: image generation ───────────────────────────────────────────────
+// Temp image store — holds base64 images briefly so ShortAPI can fetch them by URL
+const tempImages: Map<string, { data: string; mimeType: string; expires: number }> = new Map();
+
+// Clean up expired temp images every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of tempImages.entries()) {
+    if (val.expires < now) tempImages.delete(key);
+  }
+}, 10 * 60 * 1000);
+
+// Serve a temp image by ID
+app.get("/api/image/temp/:id", (req, res) => {
+  const entry = tempImages.get(req.params.id);
+  if (!entry || entry.expires < Date.now()) return res.status(404).json({ error: "Image not found or expired" });
+  const imageBuffer = Buffer.from(entry.data, "base64");
+  res.setHeader("Content-Type", entry.mimeType);
+  res.send(imageBuffer);
+});
+
+// Create a ShortAPI image generation job
 app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res) => {
-  const { prompt, model, negativePrompt, width, height, inputImageBase64, strength, apiKey: userApiKey } = req.body;
+  const { prompt, model, aspectRatio, negativePrompt, inputImageBase64, performance, apiKey: userApiKey } = req.body;
   if (!prompt) return res.status(400).json({ error: "Prompt is required." });
 
-  const apiKey = userApiKey || process.env.HUGGINGFACE_API_KEY;
-  if (!apiKey) return res.status(400).json({ error: "HuggingFace API token not configured. Add it in Settings." });
-
-  const modelId = model || (inputImageBase64 ? "Qwen/Qwen-Image-Edit-2511" : "black-forest-labs/FLUX.1-schnell");
-  const isImg2Img = !!inputImageBase64;
+  const apiKey = userApiKey || process.env.SHORTAPI_KEY;
+  if (!apiKey) return res.status(400).json({ error: "ShortAPI key not configured. Add it in Settings." });
 
   try {
-    let body: any;
+    let imageUrl: string | undefined;
 
-    if (isImg2Img) {
-      // Image-to-image: send the reference image + text instruction
+    // If a reference image is provided, store it temporarily and get a public URL
+    if (inputImageBase64) {
       const base64Data = inputImageBase64.includes(",") ? inputImageBase64.split(",")[1] : inputImageBase64;
       const mimeMatch  = inputImageBase64.match(/data:([^;]+);/);
       const mimeType   = mimeMatch ? mimeMatch[1] : "image/jpeg";
+      const tempId     = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      tempImages.set(tempId, { data: base64Data, mimeType, expires: Date.now() + 15 * 60 * 1000 }); // 15 min TTL
+      const serverBase = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+      imageUrl = `${serverBase}/api/image/temp/${tempId}`;
+    }
 
-      // img2img: send reference image + text instruction
-      body = {
-        inputs: prompt,
-        parameters: {
-          image:           `data:${mimeType};base64,${base64Data}`,
-          strength:        strength ?? 0.75,
-          negative_prompt: negativePrompt || undefined,
-        },
+    const selectedModel = model || (imageUrl ? "shortapi/flux-1.0/image-to-image" : "midjourney/midjourney-v7/image-to-image");
+    const ratio = aspectRatio || "1:1";
+
+    let args: any;
+    if (selectedModel === "shortapi/flux-1.0/image-to-image") {
+      args = {
+        prompt,
+        aspect_ratio: ratio,
+        performance: performance || "dev",
+        ...(imageUrl ? { image_url: imageUrl } : {}),
       };
     } else {
-      // Text-to-image
-      body = {
-        inputs: prompt,
-        parameters: {
-          negative_prompt: negativePrompt || undefined,
-          width:  width  || 1024,
-          height: height || 1024,
-        },
+      // Midjourney v7
+      args = {
+        mode: "fast",
+        prompt,
+        aspect_ratio: ratio,
+        performance: performance || "balance",
+        ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
+        ...(imageUrl ? { image_urls: [imageUrl] } : {}),
       };
     }
 
-    // Remove undefined parameters
-    if (body.parameters) {
-      Object.keys(body.parameters).forEach(k => body.parameters[k] === undefined && delete body.parameters[k]);
-      if (Object.keys(body.parameters).length === 0) delete body.parameters;
-    }
-
-    const response = await fetch(`https://router.huggingface.co/fal-ai/models/${modelId}`, {
+    const response = await fetch("https://api.shortapi.ai/api/v1/job/create", {
       method: "POST",
       headers: {
-        "Authorization":     `Bearer ${apiKey}`,
-        "Content-Type":      "application/json",
-        "x-wait-for-model":  "true",
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type":  "application/json",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ model: selectedModel, args }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error(`HF image error ${response.status}:`, errText);
-      if (response.status === 503) return res.status(503).json({ error: "Model is loading — please try again in a moment." });
-      if (response.status === 401) return res.status(401).json({ error: "Invalid HuggingFace token. Check your token in Settings." });
+      console.error(`ShortAPI create job error ${response.status}:`, errText);
+      if (response.status === 401) return res.status(401).json({ error: "Invalid ShortAPI key. Check your key in Settings." });
       return res.status(response.status).json({ error: `Image generation failed: ${errText}` });
     }
 
-    const imageBuffer = await response.arrayBuffer();
-    const base64      = Buffer.from(imageBuffer).toString("base64");
-    const contentType = response.headers.get("content-type") || "image/jpeg";
-
-    res.json({ image: base64, mimeType: contentType, model: modelId });
+    const data = await response.json();
+    res.json({ jobId: data.job_id, model: selectedModel });
   } catch (e: any) {
-    console.error("HF image generation error:", e);
-    res.status(500).json({ error: e.message || "Failed to generate image." });
+    console.error("ShortAPI image generation error:", e);
+    res.status(500).json({ error: e.message || "Failed to start image generation." });
+  }
+});
+
+// Poll ShortAPI job status
+app.get("/api/image/status/:jobId", async (req, res) => {
+  const apiKey = (req.query.api_key as string) || process.env.SHORTAPI_KEY;
+  if (!apiKey) return res.status(400).json({ error: "ShortAPI key not configured." });
+
+  try {
+    const response = await fetch(`https://api.shortapi.ai/api/v1/job/query?id=${req.params.jobId}`, {
+      headers: { "Authorization": `Bearer ${apiKey}` },
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+    res.json(await response.json());
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Failed to check job status." });
   }
 });
 
