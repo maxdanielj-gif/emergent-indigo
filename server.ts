@@ -804,11 +804,26 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// ── ShortAPI: image generation ───────────────────────────────────────────────
+// ── ShortAPI: image proxy (avoids CORS on result URLs) ───────────────────────
+app.get("/api/image/proxy", async (req, res) => {
+  const url = req.query.url as string;
+  if (!url || !url.startsWith("http")) return res.status(400).json({ error: "Invalid URL" });
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return res.status(response.status).send("Upstream error");
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    const buffer = await response.arrayBuffer();
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.send(Buffer.from(buffer));
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── ShortAPI: image generation (Alibaba WAN 2.6) ─────────────────────────────
 // Temp image store — holds base64 images briefly so ShortAPI can fetch them by URL
 const tempImages: Map<string, { data: string; mimeType: string; expires: number }> = new Map();
-
-// Clean up expired temp images every 10 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [key, val] of tempImages.entries()) {
@@ -816,37 +831,39 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
-// Serve a temp image by ID
 app.get("/api/image/temp/:id", (req, res) => {
   const entry = tempImages.get(req.params.id);
   if (!entry || entry.expires < Date.now()) return res.status(404).json({ error: "Image not found or expired" });
-  const imageBuffer = Buffer.from(entry.data, "base64");
   res.setHeader("Content-Type", entry.mimeType);
-  res.send(imageBuffer);
+  res.send(Buffer.from(entry.data, "base64"));
 });
 
-// Create a ShortAPI image generation job
+// Size presets — must satisfy WAN 2.6 pixel constraints
+// img2img: total pixels 768×768 to 1280×1280 (589,824 – 1,638,400)
+// txt2img: total pixels 1280×1280 to 1440×1440 (1,638,400 – 2,073,600)
+const WAN_SIZES: Record<string, { w: number; h: number }> = {
+  // img2img sizes
+  "1:1":      { w: 1024, h: 1024 },
+  "3:4":      { w: 768,  h: 1024 },
+  "4:3":      { w: 1024, h: 768  },
+  "9:16":     { w: 576,  h: 1024 },
+  "16:9":     { w: 1024, h: 576  },
+  // txt2img sizes (larger — must hit 1280×1280 minimum total)
+  "1:1-large":  { w: 1280, h: 1280 },
+  "3:4-large":  { w: 1110, h: 1480 },
+  "4:3-large":  { w: 1480, h: 1110 },
+};
+
 app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res) => {
   const {
-    prompt, model, aspectRatio, negativePrompt, inputImageBase64,
-    // FLUX-specific
-    fluxPerformance,
-    // MJ-specific
-    mjPerformance, stylization, chaos, weirdness,
-    imageReferenceType, styleWeight, characterWeight, omniWeight,
+    prompt, negativePrompt, inputImageBase64,
+    aspectRatio, numImages, promptExtend,
     apiKey: userApiKey,
   } = req.body;
 
   if (!prompt) return res.status(400).json({ error: "Prompt is required." });
-
   const apiKey = userApiKey || process.env.SHORTAPI_KEY;
   if (!apiKey) return res.status(400).json({ error: "ShortAPI key not configured. Add it in Settings." });
-
-  // FLUX requires a reference image — reject early with a clear message
-  const isFLUX = model === "shortapi/flux-1.0/image-to-image";
-  if (isFLUX && !inputImageBase64) {
-    return res.status(400).json({ error: "FLUX requires a reference image. Enable the reference image toggle or switch to Midjourney." });
-  }
 
   try {
     let imageUrl: string | undefined;
@@ -859,75 +876,46 @@ app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res
       tempImages.set(tempId, { data: base64Data, mimeType, expires: Date.now() + 15 * 60 * 1000 });
       const serverBase = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
       imageUrl = `${serverBase}/api/image/temp/${tempId}`;
-      console.log(`Temp image created: ${imageUrl}`);
+      console.log(`Temp image hosted at: ${imageUrl}`);
     }
 
-    const selectedModel = model || "midjourney/midjourney-v7/image-to-image";
-    const ratio = aspectRatio || "1:1";
+    const isImg2Img = !!imageUrl;
+    const model     = isImg2Img ? "alibaba/wan-2.6/image-to-image" : "alibaba/wan-2.6/text-to-image";
 
-    let args: any;
+    // Pick the right size preset
+    const sizeKey = isImg2Img ? (aspectRatio || "1:1") : ((aspectRatio || "1:1") + "-large");
+    const size    = WAN_SIZES[sizeKey] || (isImg2Img ? { w: 1024, h: 1024 } : { w: 1280, h: 1280 });
 
-    if (isFLUX) {
-      // FLUX 1.0 — image_url is REQUIRED per the API docs
-      args = {
-        prompt,
-        image_url: imageUrl,
-        aspect_ratio: ratio,
-        performance: fluxPerformance || "dev",
-      };
-    } else {
-      // Midjourney v7 — mode:"fast" is required, performance is separate
-      // Sanitize prompt: remove hyphens/special chars that MJ rejects
-      const cleanPrompt = prompt.replace(/[^\w\s.,!?'"()]/g, ' ').replace(/\s+/g, ' ').trim();
-      const cleanNeg    = negativePrompt ? negativePrompt.replace(/[^\w\s.,!?'"()]/g, ' ').trim() : undefined;
+    const args: any = {
+      prompt:         prompt.trim(),
+      width:          size.w,
+      height:         size.h,
+      num_images:     Math.min(4, Math.max(1, numImages || 1)),
+      prompt_extend:  promptExtend || false,
+      ...(negativePrompt?.trim() ? { negative_prompt: negativePrompt.trim() } : {}),
+      ...(isImg2Img ? { image_urls: [imageUrl] } : {}),
+    };
 
-      args = {
-        mode:         "fast",                          // required, always "fast"
-        prompt:       cleanPrompt,
-        aspect_ratio: ratio,
-        ...(mjPerformance             ? { performance:    mjPerformance }      : {}),
-        ...(cleanNeg                  ? { negative_prompt: cleanNeg }          : {}),
-        ...(stylization  !== undefined ? { stylization }                       : {}),
-        ...(chaos        !== undefined ? { chaos }                             : {}),
-        ...(weirdness    !== undefined ? { weirdness }                         : {}),
-      };
-
-      // Reference image — goes into the appropriate field based on how user wants to use it
-      if (imageUrl) {
-        if (imageReferenceType === 'style')     args.style_image_urls     = [imageUrl];
-        else if (imageReferenceType === 'character') args.character_image_urls = [imageUrl];
-        else if (imageReferenceType === 'omni') args.omni_image_url       = imageUrl;
-        else                                    args.image_urls           = [imageUrl]; // default: standard img2img
-
-        if (imageReferenceType === 'style'     && styleWeight     !== undefined) args.style_weight     = styleWeight;
-        if (imageReferenceType === 'character' && characterWeight !== undefined) args.character_weight = characterWeight;
-        if (imageReferenceType === 'omni'      && omniWeight      !== undefined) args.omni_weight      = omniWeight;
-      }
-    }
-
-    console.log(`ShortAPI job create — model: ${selectedModel}, hasImage: ${!!imageUrl}`);
+    console.log(`WAN 2.6 job — model: ${model}, size: ${size.w}×${size.h}, hasImage: ${isImg2Img}`);
 
     const response = await fetch("https://api.shortapi.ai/api/v1/job/create", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type":  "application/json",
-      },
-      body: JSON.stringify({ model: selectedModel, args }),
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, args }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
       console.error(`ShortAPI create job error ${response.status}:`, errText);
-      if (response.status === 401) return res.status(401).json({ error: "Invalid ShortAPI key. Check your key in Settings." });
+      if (response.status === 401) return res.status(401).json({ error: "Invalid ShortAPI key. Check it in Settings." });
       return res.status(response.status).json({ error: `Image generation failed: ${errText}` });
     }
 
     const data = await response.json();
-    console.log(`ShortAPI job created: ${data.job_id}`);
-    res.json({ jobId: data.job_id, model: selectedModel });
+    console.log(`WAN 2.6 job created: ${data.job_id}`);
+    res.json({ jobId: data.job_id, model });
   } catch (e: any) {
-    console.error("ShortAPI image generation error:", e);
+    console.error("WAN 2.6 generation error:", e);
     res.status(500).json({ error: e.message || "Failed to start image generation." });
   }
 });
@@ -947,32 +935,36 @@ app.get("/api/image/status/:jobId", async (req, res) => {
     }
     const data = await response.json();
 
-    // Log the full response so we can see what ShortAPI returns (only when status changes)
-    if (data.status === 'succeeded' || data.status === 'failed') {
-      console.log(`ShortAPI job ${req.params.jobId} ${data.status}:`, JSON.stringify(data).slice(0, 500));
+    // Log full response when job completes so we can see the structure in Render logs
+    if (data.status === "succeeded" || data.status === "failed") {
+      console.log(`Job ${req.params.jobId} ${data.status}:`, JSON.stringify(data).slice(0, 800));
     }
 
-    // Normalize image URLs out of whatever structure ShortAPI returns
-    if (data.status === 'succeeded') {
+    // Normalize image URLs out of every possible structure
+    if (data.status === "succeeded") {
       const urls: string[] = [];
-      const r = data.result || data.output || data;
+      const r = data.result ?? data.output ?? data;
 
-      if (Array.isArray(r?.images))       r.images.forEach((i: any)  => urls.push(typeof i === 'string' ? i : (i.url || i.image_url)));
-      if (Array.isArray(r?.image_urls))   r.image_urls.forEach((u: string) => urls.push(u));
-      if (Array.isArray(r?.output))       r.output.forEach((u: any)  => urls.push(typeof u === 'string' ? u : u.url));
-      if (typeof r?.image_url === 'string') urls.push(r.image_url);
-      if (typeof r?.url === 'string')       urls.push(r.url);
-      if (typeof r?.image === 'string')     urls.push(r.image);
+      if (Array.isArray(r?.images))     r.images.forEach((i: any)    => { const u = typeof i === "string" ? i : (i.url || i.image_url); if (u) urls.push(u); });
+      if (Array.isArray(r?.image_urls)) r.image_urls.forEach((u: string) => urls.push(u));
+      if (Array.isArray(r?.output))     r.output.forEach((u: any)    => { const s = typeof u === "string" ? u : u.url; if (s) urls.push(s); });
+      if (typeof r?.image_url === "string") urls.push(r.image_url);
+      if (typeof r?.url       === "string") urls.push(r.url);
+      if (typeof r?.image     === "string") urls.push(r.image);
 
-      // Last resort: scan the whole result string for image URLs
+      // Last resort: scan for any image URL in the raw response
       if (urls.length === 0) {
-        const resultStr = JSON.stringify(data);
-        const matches = resultStr.match(/https?:\/\/[^\s"\\]+\.(?:jpg|jpeg|png|webp|gif)[^\s"\\]*/gi) || [];
+        const matches = JSON.stringify(data).match(/https?:\/\/[^\s"\\]+\.(?:jpg|jpeg|png|webp|gif)[^\s"\\]*/gi) || [];
         urls.push(...matches);
       }
 
-      const cleanUrls = [...new Set(urls.filter(Boolean))];
-      return res.json({ ...data, _imageUrls: cleanUrls });
+      // Proxy all URLs through our server to avoid CORS issues
+      const serverBase = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+      const cleanUrls  = [...new Set(urls.filter(Boolean))];
+      const proxiedUrls = cleanUrls.map(u => `${serverBase}/api/image/proxy?url=${encodeURIComponent(u)}`);
+
+      console.log(`Returning ${proxiedUrls.length} proxied image URL(s)`);
+      return res.json({ ...data, _imageUrls: proxiedUrls });
     }
 
     res.json(data);
@@ -980,6 +972,10 @@ app.get("/api/image/status/:jobId", async (req, res) => {
     res.status(500).json({ error: e.message || "Failed to check job status." });
   }
 });
+
+
+
+
 
 
 app.post("/api/analyze-persona", async (req, res) => {
