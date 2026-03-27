@@ -204,17 +204,32 @@ const ImageGeneratorScreen: React.FC = () => {
         {isImg2Img ? (
           <div>
             <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
-              Strength: {strength.toFixed(2)}
+              {model.toLowerCase().includes('qwen') ? 'Qwen is instruction-based — no strength needed' : `Strength: ${strength.toFixed(2)}`}
             </label>
-            <input
-              type="range" min="0.1" max="1.0" step="0.05"
-              value={strength}
-              onChange={(e) => setStrength(parseFloat(e.target.value))}
-              className="w-full mt-2 accent-indigo-600"
-            />
-            <div className="flex justify-between text-[10px] text-indigo-400 mt-0.5">
-              <span>Keep likeness</span><span>More creative</span>
-            </div>
+            {!model.toLowerCase().includes('qwen') && (
+              <>
+                <div className="relative w-full h-6 flex items-center mt-1">
+                  <div className="absolute w-full h-2 bg-indigo-200 dark:bg-indigo-700 rounded-full" />
+                  <div
+                    className="absolute h-2 bg-indigo-600 rounded-full"
+                    style={{ width: `${((strength - 0.1) / 0.9) * 100}%` }}
+                  />
+                  <input
+                    type="range" min="0.1" max="1.0" step="0.05"
+                    value={strength}
+                    onChange={(e) => setStrength(parseFloat(e.target.value))}
+                    className="absolute w-full opacity-0 cursor-pointer h-6"
+                  />
+                  <div
+                    className="absolute w-5 h-5 bg-white border-2 border-indigo-600 rounded-full shadow pointer-events-none"
+                    style={{ left: `calc(${((strength - 0.1) / 0.9) * 100}% - 10px)` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-indigo-400 mt-1">
+                  <span>Keep likeness</span><span>More creative</span>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <div>
