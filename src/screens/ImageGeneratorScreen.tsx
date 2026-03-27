@@ -9,12 +9,11 @@ import {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const ASPECT_RATIOS = [
-  { label: 'Square (1:1)',    value: 'square_1_1'      },
-  { label: 'Portrait (2:3)', value: 'portrait_2_3'    },
-  { label: 'Landscape (3:2)',value: 'landscape_3_2'   },
-  { label: 'Tall (9:16)',    value: 'portrait_9_16'   },
-  { label: 'Wide (16:9)',    value: 'widescreen_16_9' },
-  { label: 'Classic (4:3)', value: 'classic_4_3'      },
+  { label: 'Square (1:1)',      value: 'square_1_1'      },
+  { label: 'Portrait (3:4)',    value: 'traditional_3_4' },
+  { label: 'Landscape (4:3)',   value: 'classic_4_3'     },
+  { label: 'Tall (9:16)',       value: 'social_story_9_16'},
+  { label: 'Wide (16:9)',       value: 'widescreen_16_9' },
 ];
 const RESOLUTIONS = [
   { label: '1K — Fast (10–20s)',     value: '1k' },
@@ -213,13 +212,34 @@ const ImageGeneratorScreen: React.FC = () => {
     const appearance = aiProfile.appearance?.trim();
     let finalPrompt = prompt.trim();
     if (hasStructureRef && appearance) finalPrompt = `${appearance}. ${finalPrompt}`;
-    promptRef.current = finalPrompt;
+    // Build the final prompt with @ character references injected
+    // Freepik requires @name in the prompt text to activate character references
+    let enrichedPrompt = finalPrompt;
+
+    if (hasStructureRef) {
+      // Structure reference image is referenced as @img1 in the prompt
+      if (!enrichedPrompt.includes('@img1')) {
+        enrichedPrompt = `@img1 ${enrichedPrompt}`;
+      }
+    }
+
+    if (!usingRefs && selectedLoraChars.length > 0) {
+      // Inject @charactername for each selected character LoRA if not already in prompt
+      selectedLoraChars.forEach((c: any) => {
+        const tag = `@${c.id}`;
+        if (!enrichedPrompt.includes(tag)) {
+          enrichedPrompt = `${tag} ${enrichedPrompt}`;
+        }
+      });
+    }
+
+    promptRef.current = enrichedPrompt;
 
     const usingRefs = hasStructureRef || !!styleRefImage;
 
     try {
       const body: any = {
-        prompt: finalPrompt, aspectRatio, resolution, model,
+        prompt: enrichedPrompt, aspectRatio, resolution, model,
         adherence, hdr, creativeDetailing, apiKey: freepikApiKey,
         ...(negPrompt.trim() ? { negativePrompt: negPrompt.trim() } : {}),
         ...(hasStructureRef ? { structureReference: aiProfile.referenceImage, structureStrength } : {}),
@@ -402,9 +422,13 @@ const ImageGeneratorScreen: React.FC = () => {
 
             {/* Structure strength — only when character ref is active */}
             {useReference && hasRef && (
-              <div className="pt-1">
+              <div className="pt-1 space-y-2">
                 <Slider label="Structure Strength" value={structureStrength} min={0} max={100} onChange={setStructureStrength} />
                 <p className="text-[10px] text-indigo-400 -mt-1"><strong>20–40</strong> = face/hair/body only. <strong>60–80</strong> = also copies pose &amp; outfit.</p>
+                <div className="flex items-center gap-1.5 px-2 py-1.5 bg-indigo-200 dark:bg-indigo-800/70 rounded-lg">
+                  <span className="text-[10px] font-mono font-bold text-indigo-700 dark:text-indigo-300">@img1</span>
+                  <span className="text-[10px] text-indigo-500 dark:text-indigo-400">is automatically added to your prompt — this tells Freepik to use this image for the face and character</span>
+                </div>
               </div>
             )}
 
@@ -427,51 +451,72 @@ const ImageGeneratorScreen: React.FC = () => {
             )}
           </div>
 
-          {/* LoRA selectors — only when no refs active */}
-          {!usingRefs && (characterLoras.length > 0 || styleLoras.length > 0) && (
-            <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
-              <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">LoRA Character / Style</p>
-              <p className="text-[10px] text-indigo-400 dark:text-indigo-500">Select trained character or style LoRAs to apply. LoRAs require turning off both reference images above.</p>
-              {characterLoras.length > 0 && (
+          {/* LoRA section — always visible, greyed when refs active */}
+          {freepikApiKey && (lorasLoaded ? allLoras.length > 0 : true) && (
+            <div className={`p-3 rounded-xl border space-y-3 transition-opacity ${usingRefs ? 'opacity-50' : ''} bg-indigo-50 dark:bg-indigo-900/30 border-indigo-100 dark:border-indigo-800`}>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Your LoRAs</p>
+                <button onClick={() => { setLorasLoaded(false); setTimeout(loadLoras, 100); }}
+                  className="text-xs text-indigo-500 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3" /> Refresh
+                </button>
+              </div>
+              {usingRefs && (
+                <p className="text-[10px] text-amber-500 dark:text-amber-400">LoRAs are disabled when reference images are active. Turn off both image slots above to use a LoRA instead.</p>
+              )}
+              {!lorasLoaded && <p className="text-xs text-indigo-400 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Loading…</p>}
+              {lorasLoaded && allLoras.length === 0 && (
+                <p className="text-xs text-indigo-400">No LoRAs yet — train one on the Character LoRA tab.</p>
+              )}
+              {lorasLoaded && characterLoras.length > 0 && (
                 <div>
                   <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-1">Characters</p>
                   <div className="space-y-1">
                     {characterLoras.map((l: any) => {
                       const sel = selectedLoraChars.find(x => x.id === String(l.id));
+                      const isTraining = ['training','queued','pending'].includes(l.training?.status);
                       return (
-                        <div key={l.id} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${sel ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700 hover:border-indigo-400'}`}
-                          onClick={() => setSelectedLoraChars(prev =>
+                        <div key={l.id}
+                          onClick={() => !usingRefs && !isTraining && setSelectedLoraChars(prev =>
                             sel ? prev.filter(x => x.id !== String(l.id)) : [...prev, { id: String(l.id), strength: 100 }]
-                          )}>
+                          )}
+                          className={`flex items-center gap-2 p-2 rounded-lg border transition-colors
+                            ${sel && !usingRefs ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700'}
+                            ${!usingRefs && !isTraining ? 'cursor-pointer hover:border-indigo-400' : 'cursor-default'}`}>
                           {l.preview && <img src={l.preview} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />}
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium text-indigo-900 dark:text-indigo-100 truncate">{l.name}</p>
-                            <p className="text-[10px] text-indigo-400 capitalize">{l.training?.status || 'ready'}</p>
+                            <p className={`text-[10px] ${isTraining ? 'text-amber-500' : 'text-indigo-400'}`}>
+                              {isTraining ? '⏳ Still training…' : l.training?.status || 'ready'}
+                            </p>
                           </div>
-                          {sel && <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
+                          {sel && !usingRefs && <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
                         </div>
                       );
                     })}
                   </div>
                 </div>
               )}
-              {styleLoras.length > 0 && (
+              {lorasLoaded && styleLoras.length > 0 && (
                 <div>
                   <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-1">Styles</p>
                   <div className="space-y-1">
                     {styleLoras.map((l: any) => {
                       const sel = selectedLoraStyles.find(x => x.name === l.name);
                       return (
-                        <div key={l.id || l.name} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${sel ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700 hover:border-indigo-400'}`}
-                          onClick={() => setSelectedLoraStyles(prev =>
+                        <div key={l.id || l.name}
+                          onClick={() => !usingRefs && setSelectedLoraStyles(prev =>
                             sel ? prev.filter(x => x.name !== l.name) : [...prev, { name: l.name, strength: 100 }]
-                          )}>
+                          )}
+                          className={`flex items-center gap-2 p-2 rounded-lg border transition-colors
+                            ${sel && !usingRefs ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700'}
+                            ${!usingRefs ? 'cursor-pointer hover:border-indigo-400' : 'cursor-default'}`}>
                           {l.preview && <img src={l.preview} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />}
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium text-indigo-900 dark:text-indigo-100 truncate">{l.name}</p>
                             {l.description && <p className="text-[10px] text-indigo-400 truncate">{l.description}</p>}
                           </div>
-                          {sel && <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
+                          {sel && !usingRefs && <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
                         </div>
                       );
                     })}
@@ -572,8 +617,9 @@ const ImageGeneratorScreen: React.FC = () => {
       {activeTab === 'Character LoRA' && (
         <div className="space-y-4">
           <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 text-xs text-indigo-500 dark:text-indigo-400 space-y-1">
-            <p><strong>Train a Character LoRA</strong> — upload 8–20 photos of your AI persona and Freepik will train a small custom model that remembers their face and appearance. Once trained, select it on the Generate tab for consistent results without needing a structure reference image every time.</p>
-            <p>Training takes a few minutes and counts against your Freepik credits.</p>
+            <p><strong>Train a Character LoRA</strong> — upload 8–20 photos of your AI persona and Freepik will train a small custom model that remembers their face and appearance. Once trained it will appear in the <strong>Your LoRAs</strong> section on the Generate tab.</p>
+            <p>Training takes several minutes. Once complete, turn off both reference image slots on the Generate tab and select your LoRA from the list. Use <strong>@charactername</strong> in your prompt for best results.</p>
+            <p className="text-amber-500 dark:text-amber-400">⚠ Training uses Freepik credits. Check your balance at <a href="https://www.freepik.com/developers/dashboard" target="_blank" rel="noreferrer" className="underline">freepik.com/developers/dashboard</a>.</p>
           </div>
 
           <div>
