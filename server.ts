@@ -820,19 +820,18 @@ app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res
 
     if (isImg2Img) {
       // Image-to-image: send the reference image + text instruction
-      // Strip the data URL prefix if present (e.g. "data:image/jpeg;base64,...")
       const base64Data = inputImageBase64.includes(",") ? inputImageBase64.split(",")[1] : inputImageBase64;
       const mimeMatch  = inputImageBase64.match(/data:([^;]+);/);
       const mimeType   = mimeMatch ? mimeMatch[1] : "image/jpeg";
 
+      // Qwen models are instruction-based — just image + prompt, no strength param
+      const isQwen = modelId.toLowerCase().includes("qwen");
       body = {
-        inputs: {
-          image: `data:${mimeType};base64,${base64Data}`,
-          prompt,
-        },
+        inputs: prompt,
         parameters: {
-          strength:          strength ?? 0.75,
-          negative_prompt:   negativePrompt || undefined,
+          image:           `data:${mimeType};base64,${base64Data}`,
+          ...(isQwen ? {} : { strength: strength ?? 0.75 }),
+          negative_prompt: negativePrompt || undefined,
         },
       };
     } else {
