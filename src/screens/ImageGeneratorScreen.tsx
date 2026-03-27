@@ -320,9 +320,24 @@ const ImageGeneratorScreen: React.FC = () => {
                 placeholder="What to avoid — e.g. blurry, distorted face, extra limbs"
                 className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
             </div>
-            <Slider label="Adherence — prompt vs. style fidelity" value={adherence} min={0} max={100} onChange={setAdherence} />
-            <Slider label="HDR — dynamic range and contrast" value={hdr} min={0} max={100} onChange={setHdr} />
-            <Slider label="Creative Detailing — detail vs. natural look" value={creativeDetailing} min={0} max={100} onChange={setCreativeDetailing} />
+            <div>
+              <Slider label="Adherence" value={adherence} min={0} max={100} onChange={setAdherence} />
+              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 -mt-2">
+                How strictly the AI follows your prompt. <strong>Higher</strong> = sticks closer to exactly what you wrote. <strong>Lower</strong> = more creative interpretation. Default 50 is a good middle ground.
+              </p>
+            </div>
+            <div>
+              <Slider label="HDR" value={hdr} min={0} max={100} onChange={setHdr} />
+              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 -mt-2">
+                High Dynamic Range — controls the contrast between bright and dark areas. <strong>Higher</strong> = more vivid, dramatic lighting with strong highlights and shadows. <strong>Lower</strong> = softer, more even tones. Default 50.
+              </p>
+            </div>
+            <div>
+              <Slider label="Creative Detailing" value={creativeDetailing} min={0} max={100} onChange={setCreativeDetailing} />
+              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 -mt-2">
+                Controls how much fine detail the AI adds. <strong>Higher</strong> = sharper, more intricate detail but can look more "AI-generated". <strong>Lower</strong> = more natural, painterly look with fewer artifacts. Default 33 keeps it looking realistic.
+              </p>
+            </div>
             <p className="text-[10px] text-indigo-400">Defaults: Adherence 50, HDR 50, Creative Detailing 33</p>
           </div>
         )}
