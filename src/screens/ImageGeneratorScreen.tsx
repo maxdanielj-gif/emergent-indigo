@@ -1,30 +1,36 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
-import { Download, RefreshCw, Image as ImageIcon, User, X, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  Download, RefreshCw, Image as ImageIcon, User, X,
+  ChevronDown, ChevronUp, Plus, Trash2, Wand2, Palette,
+  CheckCircle, Clock, AlertCircle, Upload
+} from 'lucide-react';
 
-// Freepik Mystic aspect ratio values
+// ── Constants ────────────────────────────────────────────────────────────────
+
 const ASPECT_RATIOS = [
-  { label: 'Square (1:1)',     value: 'square_1_1'       },
-  { label: 'Portrait (2:3)',   value: 'portrait_2_3'     },
-  { label: 'Landscape (3:2)',  value: 'landscape_3_2'    },
-  { label: 'Tall (9:16)',      value: 'portrait_9_16'    },
-  { label: 'Wide (16:9)',      value: 'widescreen_16_9'  },
-  { label: 'Classic (4:3)',    value: 'classic_4_3'      },
+  { label: 'Square (1:1)',    value: 'square_1_1'      },
+  { label: 'Portrait (2:3)', value: 'portrait_2_3'    },
+  { label: 'Landscape (3:2)',value: 'landscape_3_2'   },
+  { label: 'Tall (9:16)',    value: 'portrait_9_16'   },
+  { label: 'Wide (16:9)',    value: 'widescreen_16_9' },
+  { label: 'Classic (4:3)', value: 'classic_4_3'      },
 ];
-
 const RESOLUTIONS = [
-  { label: '1K — Fast (10–20s)',           value: '1k'  },
-  { label: '2K — Balanced (20–40s)',        value: '2k'  },
-  { label: '4K — High detail (40–90s)',     value: '4k'  },
+  { label: '1K — Fast (10–20s)',     value: '1k' },
+  { label: '2K — Balanced (20–40s)', value: '2k' },
+  { label: '4K — High detail (40–90s)', value: '4k' },
 ];
-
 const MODELS = [
-  { label: 'Realism (photorealistic)',  value: 'realism'   },
-  { label: 'Anime',                     value: 'anime'     },
-  { label: '2.5D',                      value: '2_5d'      },
+  { label: 'Realism (photorealistic)', value: 'realism' },
+  { label: 'Anime',                    value: 'anime'   },
+  { label: '2.5D',                     value: '2_5d'    },
 ];
-
+const TABS = ['Generate', 'Style Transfer', 'Character LoRA'] as const;
+type Tab = typeof TABS[number];
 type JobStatus = 'idle' | 'creating' | 'waiting' | 'succeeded' | 'failed';
+
+// ── Slider component ─────────────────────────────────────────────────────────
 
 function Slider({ label, value, min, max, onChange }: {
   label: string; value: number; min: number; max: number;
@@ -50,25 +56,86 @@ function Slider({ label, value, min, max, onChange }: {
   );
 }
 
+// ── Image picker helper ───────────────────────────────────────────────────────
+
+function ImagePickerButton({ label, value, onChange }: {
+  label: string; value: string | null; onChange: (b64: string | null) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <div>
+      <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">{label}</p>
+      <div className="flex gap-2 items-center">
+        {value ? (
+          <>
+            <img src={value} alt="" className="w-12 h-12 rounded-lg object-cover border border-indigo-300 dark:border-indigo-700" />
+            <button onClick={() => onChange(null)} className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1">
+              <X className="w-3 h-3" /> Remove
+            </button>
+          </>
+        ) : (
+          <button onClick={() => ref.current?.click()}
+            className="flex items-center gap-2 px-3 py-2 border border-dashed border-indigo-400 dark:border-indigo-600 rounded-xl text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900 transition-colors">
+            <Upload className="w-3 h-3" /> Upload image
+          </button>
+        )}
+        <input ref={ref} type="file" accept="image/*" className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (!f) return;
+            const reader = new FileReader();
+            reader.onload = () => onChange(reader.result as string);
+            reader.readAsDataURL(f);
+            e.target.value = '';
+          }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 const ImageGeneratorScreen: React.FC = () => {
   const { freepikApiKey, aiProfile, addToGallery, addToast } = useApp();
+  const hasRef = !!aiProfile.referenceImage;
 
-  const hasReference = !!aiProfile.referenceImage;
+  const [activeTab, setActiveTab] = useState<Tab>('Generate');
 
-  const [useReference,      setUseReference]      = useState(hasReference);
+  // ── Generate tab state ────────────────────────────────────────────────────
+  const [useReference,      setUseReference]      = useState(hasRef);
+  const [styleRefImage,     setStyleRefImage]      = useState<string | null>(null);
   const [prompt,            setPrompt]            = useState('');
   const [negPrompt,         setNegPrompt]         = useState('');
   const [aspectRatio,       setAspectRatio]       = useState('square_1_1');
   const [resolution,        setResolution]        = useState('2k');
   const [model,             setModel]             = useState('realism');
-  const [structureStrength, setStructureStrength] = useState(70);
+  const [structureStrength, setStructureStrength] = useState(35);
   const [adherence,         setAdherence]         = useState(50);
   const [hdr,               setHdr]               = useState(50);
   const [creativeDetailing, setCreativeDetailing] = useState(33);
   const [showAdvanced,      setShowAdvanced]      = useState(false);
-  const [jobStatus,         setJobStatus]         = useState<JobStatus>('idle');
-  const [statusMsg,         setStatusMsg]         = useState('');
-  const [resultImages,      setResultImages]      = useState<string[]>([]);
+  const [selectedLoraChars, setSelectedLoraChars] = useState<{id:string;strength:number}[]>([]);
+  const [selectedLoraStyles,setSelectedLoraStyles]= useState<{name:string;strength:number}[]>([]);
+
+  // ── LoRA state (shared) ───────────────────────────────────────────────────
+  const [loras,             setLoras]             = useState<any>({ default: [], customs: [] });
+  const [lorasLoaded,       setLorasLoaded]       = useState(false);
+
+  // ── Style transfer tab state ──────────────────────────────────────────────
+  const [stSourceImage,     setStSourceImage]     = useState<string | null>(null);
+  const [stStyleImage,      setStStyleImage]      = useState<string | null>(null);
+
+  // ── Character LoRA training tab state ────────────────────────────────────
+  const [loraName,          setLoraName]          = useState('');
+  const [loraGender,        setLoraGender]        = useState('');
+  const [loraImages,        setLoraImages]        = useState<string[]>([]);
+  const [loraTraining,      setLoraTraining]      = useState<JobStatus>('idle');
+  const [loraMsg,           setLoraMsg]           = useState('');
+
+  // ── Shared job state ──────────────────────────────────────────────────────
+  const [jobStatus,   setJobStatus]   = useState<JobStatus>('idle');
+  const [statusMsg,   setStatusMsg]   = useState('');
+  const [resultImages,setResultImages]= useState<string[]>([]);
 
   const pollRef    = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -79,135 +146,172 @@ const ImageGeneratorScreen: React.FC = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
   }, []);
 
-  const handleGenerate = async () => {
-    if (!prompt.trim()) {
-      addToast({ title: 'Prompt required', message: 'Describe the image you want.', type: 'warning' });
-      return;
-    }
-    if (!freepikApiKey) {
-      addToast({ title: 'No Freepik key', message: 'Add your Freepik API key in Settings first.', type: 'warning' });
-      return;
-    }
-
-    setJobStatus('creating');
-    setStatusMsg('Creating task…');
-    setResultImages([]);
-
-    const hasRef     = useReference && hasReference;
-    const appearance = aiProfile.appearance?.trim();
-
-    // Prepend appearance description when using reference image
-    let finalPrompt = prompt.trim();
-    if (hasRef && appearance) {
-      finalPrompt = `${appearance}. ${finalPrompt}`;
-    }
-    promptRef.current = finalPrompt;
-
+  // Load LoRAs when key is available
+  const loadLoras = useCallback(async () => {
+    if (!freepikApiKey || lorasLoaded) return;
     try {
-      const body: any = {
-        prompt:      finalPrompt,
-        aspectRatio,
-        resolution,
-        model,
-        adherence,
-        hdr,
-        creativeDetailing,
-        apiKey: freepikApiKey,
-        ...(negPrompt.trim() ? { negativePrompt: negPrompt.trim() } : {}),
-        ...(hasRef ? {
-          structureReference: aiProfile.referenceImage,
-          structureStrength,
-        } : {}),
-      };
+      const r = await fetch(`/api/image/loras?api_key=${encodeURIComponent(freepikApiKey)}`);
+      if (!r.ok) return;
+      const data = await r.json();
+      setLoras(data?.data || { default: [], customs: [] });
+      setLorasLoaded(true);
+    } catch {}
+  }, [freepikApiKey, lorasLoaded]);
 
-      const res = await fetch('/api/image/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+  useEffect(() => { loadLoras(); }, [loadLoras]);
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Failed to start generation');
-      }
-
-      const { taskId } = await res.json();
-      const resLabel = RESOLUTIONS.find(r => r.value === resolution)?.label || resolution;
-      setJobStatus('waiting');
-      setStatusMsg(`Generating at ${resLabel}…`);
-      startPolling(taskId);
-    } catch (e: any) {
-      setJobStatus('failed');
-      setStatusMsg(e.message);
-      addToast({ title: 'Generation failed', message: e.message, type: 'error' });
-    }
-  };
-
-  const startPolling = (taskId: string) => {
+  // ── Polling helper ────────────────────────────────────────────────────────
+  const startPolling = (taskId: string, statusEndpoint: string) => {
     if (pollRef.current)    clearInterval(pollRef.current);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/image/status/${taskId}?api_key=${encodeURIComponent(freepikApiKey || '')}`);
-        if (!res.ok) return;
-        const data = await res.json();
+        const r = await fetch(`${statusEndpoint}/${taskId}?api_key=${encodeURIComponent(freepikApiKey || '')}`);
+        if (!r.ok) return;
+        const data = await r.json();
         const status = String(data.status || '').toUpperCase();
 
         if (status === 'COMPLETED') {
-          clearInterval(pollRef.current!);
-          clearTimeout(timeoutRef.current!);
-          pollRef.current = null;
-
+          clearInterval(pollRef.current!); clearTimeout(timeoutRef.current!); pollRef.current = null;
           const urls: string[] = data._imageUrls || [];
           if (urls.length > 0) {
-            setResultImages(urls);
-            setJobStatus('succeeded');
-            setStatusMsg('');
+            setResultImages(urls); setJobStatus('succeeded'); setStatusMsg('');
             urls.forEach((url, i) => addToGallery({
-              id: `generated-${Date.now()}-${i}`,
-              type: 'generated', mediaType: 'image',
+              id: `generated-${Date.now()}-${i}`, type: 'generated', mediaType: 'image',
               url, prompt: promptRef.current, timestamp: Date.now(),
             }));
-            addToast({ title: 'Done!', message: `${urls.length} image${urls.length > 1 ? 's' : ''} saved to gallery.`, type: 'success' });
+            addToast({ title: 'Done!', message: 'Saved to gallery.', type: 'success' });
           } else {
-            setJobStatus('failed');
-            setStatusMsg('Task completed but no images returned. The image may have been filtered.');
+            setJobStatus('failed'); setStatusMsg('Task completed but no images returned.');
           }
-        } else if (['FAILED', 'ERROR', 'CANCELLED'].includes(status)) {
-          clearInterval(pollRef.current!);
-          clearTimeout(timeoutRef.current!);
-          pollRef.current = null;
+        } else if (['FAILED','ERROR','CANCELLED'].includes(status)) {
+          clearInterval(pollRef.current!); clearTimeout(timeoutRef.current!); pollRef.current = null;
           const msg = data.error || data.message || 'Generation failed.';
-          setJobStatus('failed');
-          setStatusMsg(msg);
+          setJobStatus('failed'); setStatusMsg(msg);
           addToast({ title: 'Failed', message: msg, type: 'error' });
         }
-        // IN_PROGRESS / CREATED — keep polling
       } catch {}
     }, 3000);
 
-    // 3-minute hard timeout
     timeoutRef.current = setTimeout(() => {
       if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-        setJobStatus('failed');
-        setStatusMsg('Timed out after 3 minutes. Check freepik.com/developers/dashboard to see your tasks.');
+        clearInterval(pollRef.current); pollRef.current = null;
+        setJobStatus('failed'); setStatusMsg('Timed out after 3 minutes.');
       }
     }, 3 * 60 * 1000);
   };
 
-  const handleDownload = (url: string, i: number) => {
-    const a = document.createElement('a');
-    a.href = url; a.download = `indigo-image-${Date.now()}-${i}.png`;
-    a.target = '_blank'; a.click();
+  // ── Generate ──────────────────────────────────────────────────────────────
+  const handleGenerate = async () => {
+    if (!prompt.trim()) { addToast({ title: 'Prompt required', message: 'Describe the image you want.', type: 'warning' }); return; }
+    if (!freepikApiKey) { addToast({ title: 'No Freepik key', message: 'Add your key in Settings.', type: 'warning' }); return; }
+
+    setJobStatus('creating'); setStatusMsg('Creating task…'); setResultImages([]);
+
+    const hasStructureRef = useReference && hasRef;
+    const appearance = aiProfile.appearance?.trim();
+    let finalPrompt = prompt.trim();
+    if (hasStructureRef && appearance) finalPrompt = `${appearance}. ${finalPrompt}`;
+    promptRef.current = finalPrompt;
+
+    const usingRefs = hasStructureRef || !!styleRefImage;
+
+    try {
+      const body: any = {
+        prompt: finalPrompt, aspectRatio, resolution, model,
+        adherence, hdr, creativeDetailing, apiKey: freepikApiKey,
+        ...(negPrompt.trim() ? { negativePrompt: negPrompt.trim() } : {}),
+        ...(hasStructureRef ? { structureReference: aiProfile.referenceImage, structureStrength } : {}),
+        ...(styleRefImage   ? { styleReference: styleRefImage } : {}),
+        // LoRAs only when no reference images (Freepik ignores them otherwise)
+        ...(!usingRefs && selectedLoraChars.length  > 0 ? { loraCharacters: selectedLoraChars  } : {}),
+        ...(!usingRefs && selectedLoraStyles.length > 0 ? { loraStyles:     selectedLoraStyles } : {}),
+      };
+
+      const r = await fetch('/api/image/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Failed'); }
+      const { taskId } = await r.json();
+      setJobStatus('waiting'); setStatusMsg(`Generating at ${RESOLUTIONS.find(x=>x.value===resolution)?.label||resolution}…`);
+      startPolling(taskId, '/api/image/status');
+    } catch (e: any) {
+      setJobStatus('failed'); setStatusMsg(e.message);
+      addToast({ title: 'Failed', message: e.message, type: 'error' });
+    }
+  };
+
+  // ── Style Transfer ────────────────────────────────────────────────────────
+  const handleStyleTransfer = async () => {
+    if (!stSourceImage || !stStyleImage) { addToast({ title: 'Both images required', message: 'Upload a source image and a style reference image.', type: 'warning' }); return; }
+    if (!freepikApiKey) { addToast({ title: 'No Freepik key', message: 'Add your key in Settings.', type: 'warning' }); return; }
+
+    setJobStatus('creating'); setStatusMsg('Starting style transfer…'); setResultImages([]);
+    promptRef.current = 'Style transfer';
+
+    try {
+      const r = await fetch('/api/image/style-transfer', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ image: stSourceImage, referenceImage: stStyleImage, apiKey: freepikApiKey }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Failed'); }
+      const { taskId } = await r.json();
+      setJobStatus('waiting'); setStatusMsg('Transferring style…');
+      startPolling(taskId, '/api/image/style-transfer');
+    } catch (e: any) {
+      setJobStatus('failed'); setStatusMsg(e.message);
+      addToast({ title: 'Failed', message: e.message, type: 'error' });
+    }
+  };
+
+  // ── LoRA training ─────────────────────────────────────────────────────────
+  const loraImageRef = useRef<HTMLInputElement>(null);
+
+  const addLoraImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach(f => {
+      const reader = new FileReader();
+      reader.onload = () => setLoraImages(prev => [...prev, (reader.result as string).split(',')[1]]);
+      reader.readAsDataURL(f);
+    });
+    e.target.value = '';
+  };
+
+  const handleTrainLora = async () => {
+    if (!loraName.trim()) { addToast({ title: 'Name required', message: 'Give your character a name.', type: 'warning' }); return; }
+    if (loraImages.length < 8) { addToast({ title: 'More images needed', message: `Upload at least 8 images. You have ${loraImages.length}.`, type: 'warning' }); return; }
+    if (!freepikApiKey) { addToast({ title: 'No Freepik key', message: 'Add your key in Settings.', type: 'warning' }); return; }
+
+    setLoraTraining('creating'); setLoraMsg('Sending training images…');
+    try {
+      const r = await fetch('/api/image/loras/character', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name: loraName.trim(), gender: loraGender || undefined, images: loraImages, apiKey: freepikApiKey }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Training failed'); }
+      setLoraTraining('waiting');
+      setLoraMsg('Training started! This takes a few minutes. Check back in Settings → LoRAs or wait for it to appear in the LoRA list on the Generate tab.');
+      addToast({ title: 'Training started!', message: `"${loraName}" character LoRA is training.`, type: 'success' });
+      setLoraImages([]); setLoraName(''); setLoraGender('');
+      setLorasLoaded(false); // force refresh next time
+    } catch (e: any) {
+      setLoraTraining('failed'); setLoraMsg(e.message);
+      addToast({ title: 'Training failed', message: e.message, type: 'error' });
+    }
   };
 
   const isGenerating = jobStatus === 'creating' || jobStatus === 'waiting';
+  const allLoras = [...(loras.default || []), ...(loras.customs || [])];
+  const characterLoras = allLoras.filter((l: any) => l.type === 'character');
+  const styleLoras     = allLoras.filter((l: any) => l.type === 'style');
+  const usingRefs = (useReference && hasRef) || !!styleRefImage;
+
+  const downloadImage = (url: string, i: number) => {
+    const a = document.createElement('a');
+    a.href = url; a.download = `indigo-image-${Date.now()}-${i}.png`; a.target = '_blank'; a.click();
+  };
 
   return (
-    <div className="p-4 max-w-2xl mx-auto space-y-5">
+    <div className="p-4 max-w-2xl mx-auto space-y-4">
       <div>
         <h2 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">Image Generator</h2>
         <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">Powered by Freepik Mystic</p>
@@ -220,140 +324,294 @@ const ImageGeneratorScreen: React.FC = () => {
         </div>
       )}
 
-      {/* Reference image */}
-      {hasReference ? (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
-            <div className="flex items-center gap-3">
-              <img src={aiProfile.referenceImage!} alt="Reference"
-                className="w-10 h-10 rounded-lg object-cover border border-indigo-200 dark:border-indigo-700" />
-              <div>
-                <p className="text-sm font-medium text-indigo-900 dark:text-indigo-100">
-                  Use {aiProfile.name}'s reference image
-                </p>
-                <p className="text-xs text-indigo-500 dark:text-indigo-400">
-                  Structure reference — guides character shape and form
-                </p>
-              </div>
-            </div>
-            <button onClick={() => setUseReference(!useReference)}
-              className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${useReference ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
-              <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${useReference ? 'translate-x-2' : '-translate-x-2'}`} />
-            </button>
-          </div>
+      {/* Tabs */}
+      <div className="flex p-1 bg-indigo-50 dark:bg-indigo-900/50 rounded-xl border border-indigo-100 dark:border-indigo-800">
+        {TABS.map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)}
+            className={`flex-1 py-2 px-2 rounded-lg text-xs font-semibold transition-all ${activeTab === tab ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 hover:text-indigo-600 dark:text-indigo-500 dark:hover:text-indigo-300'}`}>
+            {tab}
+          </button>
+        ))}
+      </div>
 
-          {useReference && (
-            <>
-              {aiProfile.appearance ? (
-                <div className="px-3 py-2 bg-indigo-100 dark:bg-indigo-800/50 rounded-lg text-xs text-indigo-600 dark:text-indigo-300">
-                  <span className="font-medium">Appearance included: </span>
-                  {aiProfile.appearance.slice(0, 120)}{aiProfile.appearance.length > 120 ? '…' : ''}
+      {/* ── GENERATE TAB ── */}
+      {activeTab === 'Generate' && (
+        <div className="space-y-4">
+          {/* Reference image */}
+          {hasRef ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                <div className="flex items-center gap-3">
+                  <img src={aiProfile.referenceImage!} alt="Reference"
+                    className="w-10 h-10 rounded-lg object-cover border border-indigo-200 dark:border-indigo-700" />
+                  <div>
+                    <p className="text-sm font-medium text-indigo-900 dark:text-indigo-100">Use {aiProfile.name}'s reference image</p>
+                    <p className="text-xs text-indigo-500 dark:text-indigo-400">Structure guide — face shape, body proportions</p>
+                  </div>
                 </div>
-              ) : (
-                <div className="px-3 py-2 bg-amber-50 dark:bg-amber-900/30 rounded-lg text-xs text-amber-600 dark:text-amber-400">
-                  No appearance description — add one in AI Profile so colors match correctly.
+                <button onClick={() => setUseReference(!useReference)}
+                  className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${useReference ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${useReference ? 'translate-x-2' : '-translate-x-2'}`} />
+                </button>
+              </div>
+              {useReference && !aiProfile.appearance && (
+                <p className="px-3 py-2 bg-amber-50 dark:bg-amber-900/30 rounded-lg text-xs text-amber-600 dark:text-amber-400">
+                  No appearance description — add one in AI Profile so hair/eye/skin colors match.
+                </p>
+              )}
+              {useReference && aiProfile.appearance && (
+                <p className="px-3 py-2 bg-indigo-100 dark:bg-indigo-800/50 rounded-lg text-xs text-indigo-600 dark:text-indigo-300">
+                  <span className="font-medium">Including: </span>
+                  {aiProfile.appearance.slice(0, 120)}{aiProfile.appearance.length > 120 ? '…' : ''}
+                </p>
+              )}
+              {useReference && (
+                <div>
+                  <Slider label="Structure Strength" value={structureStrength} min={0} max={100} onChange={setStructureStrength} />
+                  <p className="text-[10px] text-indigo-400 -mt-1"><strong>20–40</strong> = face/hair/body only. <strong>60–80</strong> = also copies pose and outfit. Higher = closer to reference.</p>
                 </div>
               )}
-              <Slider
-                label="Structure Strength"
-                value={structureStrength} min={0} max={100}
-                onChange={setStructureStrength}
-              />
-              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 -mt-2">
-                On Freepik: <strong>higher = closer to reference image</strong>. Lower values give more creative freedom. Default 70 is a good balance.
-              </p>
-            </>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 text-xs text-indigo-500 dark:text-indigo-400">
+              <User className="w-4 h-4 flex-shrink-0" />
+              Add a reference image in AI Profile for structure-guided generation.
+            </div>
           )}
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 text-xs text-indigo-500 dark:text-indigo-400">
-          <User className="w-4 h-4 flex-shrink-0" />
-          Add a reference image in AI Profile for character-consistent generation.
+
+          {/* Style reference image */}
+          <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
+            <div className="flex items-center gap-2 mb-2">
+              <Palette className="w-4 h-4 text-indigo-500" />
+              <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Style Reference Image <span className="text-xs font-normal text-indigo-400">(optional)</span></p>
+            </div>
+            <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mb-2">Upload any image whose look and feel you want to copy — a painting, a screenshot, a photo with lighting you like. The AI transfers the aesthetic onto your generation.</p>
+            <ImagePickerButton label="" value={styleRefImage} onChange={setStyleRefImage} />
+            {usingRefs && selectedLoraChars.length + selectedLoraStyles.length > 0 && (
+              <p className="text-[10px] text-amber-500 mt-2">⚠ LoRAs are ignored when reference images are active (Freepik limitation).</p>
+            )}
+          </div>
+
+          {/* LoRA selectors — only when no refs active */}
+          {!usingRefs && (characterLoras.length > 0 || styleLoras.length > 0) && (
+            <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
+              <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">LoRA Character / Style</p>
+              <p className="text-[10px] text-indigo-400 dark:text-indigo-500">Select trained character or style LoRAs to apply. LoRAs require turning off both reference images above.</p>
+              {characterLoras.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-1">Characters</p>
+                  <div className="space-y-1">
+                    {characterLoras.map((l: any) => {
+                      const sel = selectedLoraChars.find(x => x.id === String(l.id));
+                      return (
+                        <div key={l.id} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${sel ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700 hover:border-indigo-400'}`}
+                          onClick={() => setSelectedLoraChars(prev =>
+                            sel ? prev.filter(x => x.id !== String(l.id)) : [...prev, { id: String(l.id), strength: 100 }]
+                          )}>
+                          {l.preview && <img src={l.preview} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-indigo-900 dark:text-indigo-100 truncate">{l.name}</p>
+                            <p className="text-[10px] text-indigo-400 capitalize">{l.training?.status || 'ready'}</p>
+                          </div>
+                          {sel && <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {styleLoras.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-1">Styles</p>
+                  <div className="space-y-1">
+                    {styleLoras.map((l: any) => {
+                      const sel = selectedLoraStyles.find(x => x.name === l.name);
+                      return (
+                        <div key={l.id || l.name} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${sel ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700 hover:border-indigo-400'}`}
+                          onClick={() => setSelectedLoraStyles(prev =>
+                            sel ? prev.filter(x => x.name !== l.name) : [...prev, { name: l.name, strength: 100 }]
+                          )}>
+                          {l.preview && <img src={l.preview} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-indigo-900 dark:text-indigo-100 truncate">{l.name}</p>
+                            {l.description && <p className="text-[10px] text-indigo-400 truncate">{l.description}</p>}
+                          </div>
+                          {sel && <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Prompt */}
+          <div>
+            <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Prompt</label>
+            <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={3}
+              placeholder={`Describe the scene — e.g. "${aiProfile.name} sitting in a cozy café, warm lighting, photorealistic"`}
+              className="w-full p-3 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none" />
+          </div>
+
+          {/* Core controls */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Ratio</label>
+              <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}
+                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                {ASPECT_RATIOS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Resolution</label>
+              <select value={resolution} onChange={e => setResolution(e.target.value)}
+                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                {RESOLUTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Style</label>
+              <select value={model} onChange={e => setModel(e.target.value)}
+                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Advanced */}
+          <div>
+            <button onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 py-1">
+              {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              Advanced Settings
+            </button>
+            {showAdvanced && (
+              <div className="mt-3 space-y-4 p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                <div>
+                  <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Negative Prompt</label>
+                  <input type="text" value={negPrompt} onChange={e => setNegPrompt(e.target.value)}
+                    placeholder="What to avoid — e.g. blurry, distorted face, extra limbs"
+                    className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+                </div>
+                <div>
+                  <Slider label="Adherence" value={adherence} min={0} max={100} onChange={setAdherence} />
+                  <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = sticks closer to your prompt. <strong>Lower</strong> = more creative interpretation. Default 50.</p>
+                </div>
+                <div>
+                  <Slider label="HDR" value={hdr} min={0} max={100} onChange={setHdr} />
+                  <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = more vivid, dramatic lighting and contrast. <strong>Lower</strong> = softer, more even tones. Default 50.</p>
+                </div>
+                <div>
+                  <Slider label="Creative Detailing" value={creativeDetailing} min={0} max={100} onChange={setCreativeDetailing} />
+                  <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = sharper detail, but can look more "AI-generated". <strong>Lower</strong> = more natural look. Default 33.</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Generate button */}
+          <button onClick={handleGenerate} disabled={isGenerating || !prompt.trim() || !freepikApiKey}
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {isGenerating ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg || 'Generating…'}</> : <><Wand2 className="w-4 h-4" />Generate Image</>}
+          </button>
         </div>
       )}
 
-      {/* Prompt */}
-      <div>
-        <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Prompt</label>
-        <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={3}
-          placeholder={`Describe the scene — e.g. "${aiProfile.name} walking through a sunlit forest, cinematic photography, soft light"`}
-          className="w-full p-3 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none" />
-      </div>
-
-      {/* Core controls */}
-      <div className="grid grid-cols-3 gap-3">
-        <div>
-          <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Ratio</label>
-          <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}
-            className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-            {ASPECT_RATIOS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Resolution</label>
-          <select value={resolution} onChange={e => setResolution(e.target.value)}
-            className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-            {RESOLUTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Style</label>
-          <select value={model} onChange={e => setModel(e.target.value)}
-            className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-            {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {/* Advanced settings */}
-      <div>
-        <button onClick={() => setShowAdvanced(!showAdvanced)}
-          className="flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 py-1">
-          {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          Advanced Settings
-        </button>
-        {showAdvanced && (
-          <div className="mt-3 space-y-4 p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
-            <div>
-              <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Negative Prompt</label>
-              <input type="text" value={negPrompt} onChange={e => setNegPrompt(e.target.value)}
-                placeholder="What to avoid — e.g. blurry, distorted face, extra limbs"
-                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
-            </div>
-            <div>
-              <Slider label="Adherence" value={adherence} min={0} max={100} onChange={setAdherence} />
-              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 -mt-2">
-                How strictly the AI follows your prompt. <strong>Higher</strong> = sticks closer to exactly what you wrote. <strong>Lower</strong> = more creative interpretation. Default 50 is a good middle ground.
-              </p>
-            </div>
-            <div>
-              <Slider label="HDR" value={hdr} min={0} max={100} onChange={setHdr} />
-              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 -mt-2">
-                High Dynamic Range — controls the contrast between bright and dark areas. <strong>Higher</strong> = more vivid, dramatic lighting with strong highlights and shadows. <strong>Lower</strong> = softer, more even tones. Default 50.
-              </p>
-            </div>
-            <div>
-              <Slider label="Creative Detailing" value={creativeDetailing} min={0} max={100} onChange={setCreativeDetailing} />
-              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 -mt-2">
-                Controls how much fine detail the AI adds. <strong>Higher</strong> = sharper, more intricate detail but can look more "AI-generated". <strong>Lower</strong> = more natural, painterly look with fewer artifacts. Default 33 keeps it looking realistic.
-              </p>
-            </div>
-            <p className="text-[10px] text-indigo-400">Defaults: Adherence 50, HDR 50, Creative Detailing 33</p>
+      {/* ── STYLE TRANSFER TAB ── */}
+      {activeTab === 'Style Transfer' && (
+        <div className="space-y-4">
+          <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 text-xs text-indigo-500 dark:text-indigo-400">
+            Style Transfer takes any two images and applies the visual look of one onto the other — colors, texture, lighting, artistic style.
           </div>
-        )}
-      </div>
+          <ImagePickerButton label="Source Image (what to transform)" value={stSourceImage} onChange={setStSourceImage} />
+          <ImagePickerButton label="Style Image (the look to copy)" value={stStyleImage} onChange={setStStyleImage} />
+          <button onClick={handleStyleTransfer} disabled={isGenerating || !stSourceImage || !stStyleImage || !freepikApiKey}
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {isGenerating ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg}</> : <><Palette className="w-4 h-4" />Transfer Style</>}
+          </button>
+        </div>
+      )}
 
-      {/* Generate button */}
-      <button onClick={handleGenerate}
-        disabled={isGenerating || !prompt.trim() || !freepikApiKey}
-        className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-        {isGenerating
-          ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg || 'Generating…'}</>
-          : <><ImageIcon className="w-4 h-4" />Generate Image</>}
-      </button>
+      {/* ── CHARACTER LORA TAB ── */}
+      {activeTab === 'Character LoRA' && (
+        <div className="space-y-4">
+          <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 text-xs text-indigo-500 dark:text-indigo-400 space-y-1">
+            <p><strong>Train a Character LoRA</strong> — upload 8–20 photos of your AI persona and Freepik will train a small custom model that remembers their face and appearance. Once trained, select it on the Generate tab for consistent results without needing a structure reference image every time.</p>
+            <p>Training takes a few minutes and counts against your Freepik credits.</p>
+          </div>
 
-      {/* Error */}
-      {jobStatus === 'failed' && statusMsg && (
+          <div>
+            <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Character Name</label>
+            <input type="text" value={loraName} onChange={e => setLoraName(e.target.value)}
+              placeholder={`e.g. "${aiProfile.name}"`}
+              className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Gender <span className="font-normal text-indigo-400">(optional, helps training)</span></label>
+            <select value={loraGender} onChange={e => setLoraGender(e.target.value)}
+              className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm">
+              <option value="">Not specified</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Training Images <span className="text-indigo-400 font-normal">({loraImages.length}/20 — min 8)</span></label>
+              <button onClick={() => loraImageRef.current?.click()}
+                className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+                <Plus className="w-3 h-3" /> Add images
+              </button>
+              <input ref={loraImageRef} type="file" accept="image/*" multiple className="hidden" onChange={addLoraImages} />
+            </div>
+            {loraImages.length === 0 ? (
+              <button onClick={() => loraImageRef.current?.click()}
+                className="w-full py-8 border-2 border-dashed border-indigo-300 dark:border-indigo-700 rounded-xl text-indigo-400 dark:text-indigo-500 text-sm flex flex-col items-center gap-2 hover:bg-indigo-50 dark:hover:bg-indigo-900 transition-colors">
+                <Upload className="w-6 h-6" />
+                Tap to upload photos
+              </button>
+            ) : (
+              <div className="grid grid-cols-4 gap-2">
+                {loraImages.map((img, i) => (
+                  <div key={i} className="relative group">
+                    <img src={`data:image/jpeg;base64,${img}`} alt="" className="w-full aspect-square object-cover rounded-lg border border-indigo-200 dark:border-indigo-700" />
+                    <button onClick={() => setLoraImages(prev => prev.filter((_, j) => j !== i))}
+                      className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                <button onClick={() => loraImageRef.current?.click()}
+                  className="aspect-square border-2 border-dashed border-indigo-300 dark:border-indigo-700 rounded-lg flex items-center justify-center text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900 transition-colors">
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+            <p className="text-[10px] text-indigo-400 mt-1">Use clear, well-lit photos. Variety helps — different angles, expressions, and lighting give better results.</p>
+          </div>
+
+          <button onClick={handleTrainLora}
+            disabled={loraTraining === 'creating' || loraTraining === 'waiting' || loraImages.length < 8 || !loraName.trim() || !freepikApiKey}
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {loraTraining === 'creating' || loraTraining === 'waiting'
+              ? <><RefreshCw className="w-4 h-4 animate-spin" />Training…</>
+              : <><Wand2 className="w-4 h-4" />Train Character LoRA</>}
+          </button>
+
+          {loraMsg && (
+            <div className={`flex items-start gap-2 p-3 rounded-xl border text-sm ${loraTraining === 'failed' ? 'bg-red-50 dark:bg-red-900/30 border-red-200 text-red-700 dark:text-red-300' : 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 text-indigo-700 dark:text-indigo-300'}`}>
+              {loraTraining === 'waiting' ? <Clock className="w-4 h-4 flex-shrink-0 mt-0.5" /> : loraTraining === 'failed' ? <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" /> : <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />}
+              <p>{loraMsg}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Shared error */}
+      {jobStatus === 'failed' && statusMsg && activeTab !== 'Character LoRA' && (
         <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl">
           <X className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-red-700 dark:text-red-300">{statusMsg}</p>
@@ -365,9 +623,8 @@ const ImageGeneratorScreen: React.FC = () => {
         <div className="space-y-4">
           {resultImages.map((url, i) => (
             <div key={i} className="space-y-2">
-              <img src={url} alt={`Generated ${i + 1}`}
-                className="w-full rounded-2xl border border-indigo-100 dark:border-indigo-800 shadow-lg" />
-              <button onClick={() => handleDownload(url, i)}
+              <img src={url} alt={`Result ${i+1}`} className="w-full rounded-2xl border border-indigo-100 dark:border-indigo-800 shadow-lg" />
+              <button onClick={() => downloadImage(url, i)}
                 className="w-full flex items-center justify-center gap-2 py-2 border border-indigo-300 dark:border-indigo-700 rounded-xl text-sm text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900 transition-colors">
                 <Download className="w-4 h-4" /> Download
               </button>
@@ -379,17 +636,6 @@ const ImageGeneratorScreen: React.FC = () => {
           </button>
         </div>
       )}
-
-      {/* Tips */}
-      <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
-        <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Tips</p>
-        <ul className="text-xs text-indigo-500 dark:text-indigo-400 space-y-1">
-          <li>The reference image is used as a <strong>structure guide</strong> — it shapes the composition without transferring colors. Appearance description handles colors.</li>
-          <li>Structure Strength 60–80 keeps the character recognizable while allowing scene creativity.</li>
-          <li>1K is fastest for previews. Use 2K or 4K for final images.</li>
-          <li>Generated images are saved to your Gallery automatically.</li>
-        </ul>
-      </div>
     </div>
   );
 };
