@@ -907,7 +907,37 @@ app.get("/api/image/status/:jobId", async (req, res) => {
       const errText = await response.text();
       return res.status(response.status).json({ error: errText });
     }
-    res.json(await response.json());
+    const data = await response.json();
+
+    // Log the full response so we can see what ShortAPI returns (only when status changes)
+    if (data.status === 'succeeded' || data.status === 'failed') {
+      console.log(`ShortAPI job ${req.params.jobId} ${data.status}:`, JSON.stringify(data).slice(0, 500));
+    }
+
+    // Normalize image URLs out of whatever structure ShortAPI returns
+    if (data.status === 'succeeded') {
+      const urls: string[] = [];
+      const r = data.result || data.output || data;
+
+      if (Array.isArray(r?.images))       r.images.forEach((i: any)  => urls.push(typeof i === 'string' ? i : (i.url || i.image_url)));
+      if (Array.isArray(r?.image_urls))   r.image_urls.forEach((u: string) => urls.push(u));
+      if (Array.isArray(r?.output))       r.output.forEach((u: any)  => urls.push(typeof u === 'string' ? u : u.url));
+      if (typeof r?.image_url === 'string') urls.push(r.image_url);
+      if (typeof r?.url === 'string')       urls.push(r.url);
+      if (typeof r?.image === 'string')     urls.push(r.image);
+
+      // Last resort: scan the whole result string for image URLs
+      if (urls.length === 0) {
+        const resultStr = JSON.stringify(data);
+        const matches = resultStr.match(/https?:\/\/[^\s"\\]+\.(?:jpg|jpeg|png|webp|gif)[^\s"\\]*/gi) || [];
+        urls.push(...matches);
+      }
+
+      const cleanUrls = [...new Set(urls.filter(Boolean))];
+      return res.json({ ...data, _imageUrls: cleanUrls });
+    }
+
+    res.json(data);
   } catch (e: any) {
     res.status(500).json({ error: e.message || "Failed to check job status." });
   }
