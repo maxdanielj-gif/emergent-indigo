@@ -805,26 +805,60 @@ app.post("/api/chat", async (req, res) => {
 });
 
 // ── HuggingFace: image generation ────────────────────────────────────────────
-app.post("/api/image/generate", express.json(), async (req, res) => {
-  const { prompt, model, negativePrompt, width, height, apiKey: userApiKey } = req.body;
+app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res) => {
+  const { prompt, model, negativePrompt, width, height, inputImageBase64, strength, apiKey: userApiKey } = req.body;
   if (!prompt) return res.status(400).json({ error: "Prompt is required." });
 
   const apiKey = userApiKey || process.env.HUGGINGFACE_API_KEY;
   if (!apiKey) return res.status(400).json({ error: "HuggingFace API token not configured. Add it in Settings." });
 
-  const modelId = model || "black-forest-labs/FLUX.1-schnell";
+  const modelId = model || (inputImageBase64 ? "Qwen/Qwen-Image-Edit-2511" : "black-forest-labs/FLUX.1-schnell");
+  const isImg2Img = !!inputImageBase64;
 
   try {
-    const body: any = { inputs: prompt };
-    if (negativePrompt) body.parameters = { negative_prompt: negativePrompt };
-    if (width || height) body.parameters = { ...body.parameters, width: width || 1024, height: height || 1024 };
+    let body: any;
+
+    if (isImg2Img) {
+      // Image-to-image: send the reference image + text instruction
+      // Strip the data URL prefix if present (e.g. "data:image/jpeg;base64,...")
+      const base64Data = inputImageBase64.includes(",") ? inputImageBase64.split(",")[1] : inputImageBase64;
+      const mimeMatch  = inputImageBase64.match(/data:([^;]+);/);
+      const mimeType   = mimeMatch ? mimeMatch[1] : "image/jpeg";
+
+      body = {
+        inputs: {
+          image: `data:${mimeType};base64,${base64Data}`,
+          prompt,
+        },
+        parameters: {
+          strength:          strength ?? 0.75,
+          negative_prompt:   negativePrompt || undefined,
+        },
+      };
+    } else {
+      // Text-to-image
+      body = {
+        inputs: prompt,
+        parameters: {
+          negative_prompt: negativePrompt || undefined,
+          width:  width  || 1024,
+          height: height || 1024,
+        },
+      };
+    }
+
+    // Remove undefined parameters
+    if (body.parameters) {
+      Object.keys(body.parameters).forEach(k => body.parameters[k] === undefined && delete body.parameters[k]);
+      if (Object.keys(body.parameters).length === 0) delete body.parameters;
+    }
 
     const response = await fetch(`https://router.huggingface.co/hf-inference/models/${modelId}`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "x-wait-for-model": "true", // wait instead of returning 503 if model is loading
+        "Authorization":     `Bearer ${apiKey}`,
+        "Content-Type":      "application/json",
+        "x-wait-for-model":  "true",
       },
       body: JSON.stringify(body),
     });
@@ -832,15 +866,13 @@ app.post("/api/image/generate", express.json(), async (req, res) => {
     if (!response.ok) {
       const errText = await response.text();
       console.error(`HF image error ${response.status}:`, errText);
-      // Friendly error for common cases
-      if (response.status === 503) return res.status(503).json({ error: "Model is loading, please try again in a moment." });
+      if (response.status === 503) return res.status(503).json({ error: "Model is loading — please try again in a moment." });
       if (response.status === 401) return res.status(401).json({ error: "Invalid HuggingFace token. Check your token in Settings." });
       return res.status(response.status).json({ error: `Image generation failed: ${errText}` });
     }
 
-    // Response is raw image bytes — convert to base64 to send as JSON
     const imageBuffer = await response.arrayBuffer();
-    const base64 = Buffer.from(imageBuffer).toString("base64");
+    const base64      = Buffer.from(imageBuffer).toString("base64");
     const contentType = response.headers.get("content-type") || "image/jpeg";
 
     res.json({ image: base64, mimeType: contentType, model: modelId });
