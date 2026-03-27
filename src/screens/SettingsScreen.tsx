@@ -14,7 +14,7 @@ const SettingsScreen: React.FC = () => {
     anthropicApiKey, setAnthropicApiKey,
     elevenLabsApiKey, setElevenLabsApiKey,
     geminiApiKey, setGeminiApiKey,
-    shortApiKey, setShortAPIApiKey,
+    freepikApiKey, setShortAPIApiKey,
     setShowTutorial,
     autoSaveChat, setAutoSaveChat, autoSaveChatInterval, setAutoSaveChatInterval,
     autoJsonBackup, setAutoJsonBackup, autoJsonBackupInterval, setAutoJsonBackupInterval,
@@ -40,14 +40,14 @@ const SettingsScreen: React.FC = () => {
   const [localAnthropicApiKey,    setLocalAnthropicApiKey]    = useState(anthropicApiKey || '');
   const [localElevenLabsApiKey,   setLocalElevenLabsApiKey]   = useState(elevenLabsApiKey || '');
   const [localGeminiApiKey,       setLocalGeminiApiKey]       = useState(geminiApiKey || '');
-  const [localShortAPIApiKey,  setLocalShortAPIApiKey]  = useState(shortApiKey || '');
+  const [localShortAPIApiKey,  setLocalShortAPIApiKey]  = useState(freepikApiKey || '');
 
   // Sync local key fields once the context loads saved values from IndexedDB
   React.useEffect(() => { setLocalAnthropicApiKey(anthropicApiKey || ''); }, [anthropicApiKey]);
   React.useEffect(() => { setLocalAsyncApiKey(asyncApiKey || ''); }, [asyncApiKey]);
   React.useEffect(() => { setLocalElevenLabsApiKey(elevenLabsApiKey || ''); }, [elevenLabsApiKey]);
   React.useEffect(() => { setLocalGeminiApiKey(geminiApiKey || ''); }, [geminiApiKey]);
-  React.useEffect(() => { setLocalShortAPIApiKey(shortApiKey || ''); }, [shortApiKey]);
+  React.useEffect(() => { setLocalShortAPIApiKey(freepikApiKey || ''); }, [freepikApiKey]);
   const [localSyncId,          setLocalSyncId]          = useState(userId || '');
   const [recoveryId,           setRecoveryId]           = useState('');
   const [isExporting,          setIsExporting]          = useState(false);
@@ -422,14 +422,14 @@ const SettingsScreen: React.FC = () => {
                     type="password"
                     value={localShortAPIApiKey}
                     onChange={(e) => setLocalShortAPIApiKey(e.target.value)}
-                    placeholder="Your ShortAPI key"
+                    placeholder="Your Freepik API key"
                     className="app-input pl-9"
                   />
                 </div>
                 <button onClick={handleSaveShortAPIKey} className="app-btn-primary">Save</button>
               </div>
               <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
-                Get a key at <a href="https://shortapi.ai" target="_blank" rel="noreferrer" className="underline">shortapi.ai</a>. Enables FLUX and Midjourney image generation.
+                Get a key at <a href="https://www.freepik.com/developers/dashboard" target="_blank" rel="noreferrer" className="underline">freepik.com/developers</a>. Enables AI image generation. New accounts get $5 in free credits.
               </p>
             </div>
 
