@@ -235,7 +235,8 @@ const ImageGeneratorScreen: React.FC = () => {
 
     promptRef.current = enrichedPrompt;
 
-    const usingRefs = hasStructureRef || !!styleRefImage;
+    // Freepik only ignores LoRAs when BOTH structure AND style refs are present simultaneously
+    const usingRefs = hasStructureRef && !!styleRefImage;
 
     try {
       const body: any = {
@@ -323,7 +324,8 @@ const ImageGeneratorScreen: React.FC = () => {
   const allLoras = [...(loras.default || []), ...(loras.customs || [])];
   const characterLoras = allLoras.filter((l: any) => l.type === 'character');
   const styleLoras     = allLoras.filter((l: any) => l.type === 'style');
-  const usingRefs = (useReference && hasRef) || !!styleRefImage;
+  // LoRAs disabled only when both refs active simultaneously (Freepik API limitation)
+  const usingRefs = (useReference && hasRef) && !!styleRefImage;
 
   const downloadImage = (url: string, i: number) => {
     const a = document.createElement('a');
@@ -462,7 +464,7 @@ const ImageGeneratorScreen: React.FC = () => {
                 </button>
               </div>
               {usingRefs && (
-                <p className="text-[10px] text-amber-500 dark:text-amber-400">LoRAs are disabled when reference images are active. Turn off both image slots above to use a LoRA instead.</p>
+                <p className="text-[10px] text-amber-500 dark:text-amber-400">LoRAs are disabled when both a character reference AND a style reference are active at the same time (Freepik limitation). Turn off one of the image slots to use a LoRA alongside the other.</p>
               )}
               {!lorasLoaded && <p className="text-xs text-indigo-400 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Loading…</p>}
               {lorasLoaded && allLoras.length === 0 && (
