@@ -3,16 +3,15 @@ import { useApp } from '../context/AppContext';
 import { Download, RefreshCw, Image as ImageIcon, User } from 'lucide-react';
 
 const TXT2IMG_MODELS = [
-  { id: 'black-forest-labs/FLUX.1-schnell',              label: 'FLUX.1 Schnell — Fast, free' },
+  { id: 'black-forest-labs/FLUX.1-schnell',              label: 'FLUX.1 Schnell — Fast (recommended)' },
   { id: 'black-forest-labs/FLUX.1-dev',                  label: 'FLUX.1 Dev — Higher quality' },
-  { id: 'stabilityai/stable-diffusion-xl-base-1.0',      label: 'Stable Diffusion XL' },
+  { id: 'black-forest-labs/FLUX.1-Krea-dev',             label: 'FLUX.1 Krea Dev — Realistic' },
+  { id: 'ByteDance/SDXL-Lightning',                      label: 'SDXL Lightning — Fast & stylized' },
 ];
 
 const IMG2IMG_MODELS = [
-  { id: 'Qwen/Qwen-Image-Edit-2511',                     label: 'Qwen Image Edit 2511 — Instruction-based (recommended)' },
-  { id: 'Qwen/Qwen-Image-Edit-2509',                     label: 'Qwen Image Edit 2509' },
-  { id: 'black-forest-labs/FLUX.2-dev',                  label: 'FLUX.2 Dev — Highest quality (requires license)' },
-  { id: 'stabilityai/stable-diffusion-xl-refiner-1.0',   label: 'SDXL Refiner' },
+  { id: 'meituan-longcat/LongCat-Image-Edit',            label: 'LongCat Image Edit — Instruction-based (recommended)' },
+  { id: 'black-forest-labs/FLUX.1-Krea-dev',             label: 'FLUX.1 Krea Dev — Style transfer' },
 ];
 
 const SIZES = [
@@ -204,32 +203,28 @@ const ImageGeneratorScreen: React.FC = () => {
         {isImg2Img ? (
           <div>
             <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
-              {model.toLowerCase().includes('qwen') ? 'Qwen is instruction-based — no strength needed' : `Strength: ${strength.toFixed(2)}`}
+              Strength: {strength.toFixed(2)}
             </label>
-            {!model.toLowerCase().includes('qwen') && (
-              <>
-                <div className="relative w-full h-6 flex items-center mt-1">
-                  <div className="absolute w-full h-2 bg-indigo-200 dark:bg-indigo-700 rounded-full" />
-                  <div
-                    className="absolute h-2 bg-indigo-600 rounded-full"
-                    style={{ width: `${((strength - 0.1) / 0.9) * 100}%` }}
-                  />
-                  <input
-                    type="range" min="0.1" max="1.0" step="0.05"
-                    value={strength}
-                    onChange={(e) => setStrength(parseFloat(e.target.value))}
-                    className="absolute w-full opacity-0 cursor-pointer h-6"
-                  />
-                  <div
-                    className="absolute w-5 h-5 bg-white border-2 border-indigo-600 rounded-full shadow pointer-events-none"
-                    style={{ left: `calc(${((strength - 0.1) / 0.9) * 100}% - 10px)` }}
-                  />
-                </div>
-                <div className="flex justify-between text-[10px] text-indigo-400 mt-1">
-                  <span>Keep likeness</span><span>More creative</span>
-                </div>
-              </>
-            )}
+            <div className="relative w-full h-6 flex items-center mt-1">
+              <div className="absolute w-full h-2 bg-indigo-200 dark:bg-indigo-700 rounded-full" />
+              <div
+                className="absolute h-2 bg-indigo-600 rounded-full"
+                style={{ width: `${((strength - 0.1) / 0.9) * 100}%` }}
+              />
+              <input
+                type="range" min="0.1" max="1.0" step="0.05"
+                value={strength}
+                onChange={(e) => setStrength(parseFloat(e.target.value))}
+                className="absolute w-full opacity-0 cursor-pointer h-6"
+              />
+              <div
+                className="absolute w-5 h-5 bg-white border-2 border-indigo-600 rounded-full shadow pointer-events-none"
+                style={{ left: `calc(${((strength - 0.1) / 0.9) * 100}% - 10px)` }}
+              />
+            </div>
+            <div className="flex justify-between text-[10px] text-indigo-400 mt-1">
+              <span>Keep likeness</span><span>More creative</span>
+            </div>
           </div>
         ) : (
           <div>
@@ -280,13 +275,13 @@ const ImageGeneratorScreen: React.FC = () => {
           {isImg2Img ? (
             <>
               <li>Lower strength (0.4–0.6) keeps the reference image closer. Higher (0.8+) allows more creative changes.</li>
-              <li>Qwen Image Edit is instruction-based — describe what you want to change, not the full scene.</li>
-              <li>FLUX.2-dev requires accepting the license on huggingface.co before it will work.</li>
+              <li>LongCat Image Edit is instruction-based — describe what you want to change, not the full scene.</li>
+              <li>All models run via fal.ai through your HuggingFace token.</li>
             </>
           ) : (
             <>
-              <li>FLUX Schnell is fastest (free tier, ~10–30s). FLUX Dev is higher quality but slower.</li>
-              <li>If you get a "model loading" error, wait 30 seconds and try again.</li>
+              <li>FLUX Schnell is the fastest option. FLUX Dev and Krea produce higher quality results.</li>
+              <li>All models run via fal.ai using your HuggingFace token's monthly credits ($2 free/month on Pro).</li>
             </>
           )}
           <li>Generated images are automatically saved to your Gallery.</li>
