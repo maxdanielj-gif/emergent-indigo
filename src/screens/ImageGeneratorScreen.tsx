@@ -337,58 +337,93 @@ const ImageGeneratorScreen: React.FC = () => {
       {/* ── GENERATE TAB ── */}
       {activeTab === 'Generate' && (
         <div className="space-y-4">
-          {/* Reference image */}
-          {hasRef ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
-                <div className="flex items-center gap-3">
-                  <img src={aiProfile.referenceImage!} alt="Reference"
-                    className="w-10 h-10 rounded-lg object-cover border border-indigo-200 dark:border-indigo-700" />
-                  <div>
-                    <p className="text-sm font-medium text-indigo-900 dark:text-indigo-100">Use {aiProfile.name}'s reference image</p>
-                    <p className="text-xs text-indigo-500 dark:text-indigo-400">Structure guide — face shape, body proportions</p>
-                  </div>
-                </div>
-                <button onClick={() => setUseReference(!useReference)}
-                  className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${useReference ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
-                  <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${useReference ? 'translate-x-2' : '-translate-x-2'}`} />
-                </button>
-              </div>
-              {useReference && !aiProfile.appearance && (
-                <p className="px-3 py-2 bg-amber-50 dark:bg-amber-900/30 rounded-lg text-xs text-amber-600 dark:text-amber-400">
-                  No appearance description — add one in AI Profile so hair/eye/skin colors match.
-                </p>
-              )}
-              {useReference && aiProfile.appearance && (
-                <p className="px-3 py-2 bg-indigo-100 dark:bg-indigo-800/50 rounded-lg text-xs text-indigo-600 dark:text-indigo-300">
-                  <span className="font-medium">Including: </span>
-                  {aiProfile.appearance.slice(0, 120)}{aiProfile.appearance.length > 120 ? '…' : ''}
-                </p>
-              )}
-              {useReference && (
-                <div>
-                  <Slider label="Structure Strength" value={structureStrength} min={0} max={100} onChange={setStructureStrength} />
-                  <p className="text-[10px] text-indigo-400 -mt-1"><strong>20–40</strong> = face/hair/body only. <strong>60–80</strong> = also copies pose and outfit. Higher = closer to reference.</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 text-xs text-indigo-500 dark:text-indigo-400">
-              <User className="w-4 h-4 flex-shrink-0" />
-              Add a reference image in AI Profile for structure-guided generation.
-            </div>
-          )}
 
-          {/* Style reference image */}
-          <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
-            <div className="flex items-center gap-2 mb-2">
-              <Palette className="w-4 h-4 text-indigo-500" />
-              <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Style Reference Image <span className="text-xs font-normal text-indigo-400">(optional)</span></p>
+          {/* ── Reference Images — side by side like Freepik website ── */}
+          <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
+            <p className="text-sm font-semibold text-indigo-800 dark:text-indigo-200">Reference Images</p>
+            <div className="grid grid-cols-2 gap-3">
+
+              {/* Slot 1 — Character / Structure */}
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Character Reference</p>
+                <p className="text-[10px] text-indigo-400 dark:text-indigo-500">Guides face shape and body proportions</p>
+                {hasRef && useReference ? (
+                  <div className="relative">
+                    <img src={aiProfile.referenceImage!} alt="Structure ref"
+                      className="w-full aspect-square object-cover rounded-xl border-2 border-indigo-400 dark:border-indigo-500" />
+                    <div className="absolute bottom-1 left-1 right-1 bg-indigo-600/80 rounded-lg px-1.5 py-0.5 text-[9px] text-white text-center truncate">
+                      {aiProfile.name}'s profile image
+                    </div>
+                    <button onClick={() => setUseReference(false)}
+                      className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => hasRef ? setUseReference(true) : undefined}
+                    className={`w-full aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-colors ${hasRef ? 'border-indigo-400 dark:border-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-800 cursor-pointer text-indigo-500' : 'border-indigo-200 dark:border-indigo-700 text-indigo-300 dark:text-indigo-600 cursor-default'}`}>
+                    <User className="w-5 h-5" />
+                    <span className="text-[10px] text-center px-1">
+                      {hasRef ? `Use ${aiProfile.name}'s photo` : 'Add reference photo in AI Profile'}
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              {/* Slot 2 — Style Reference */}
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Style Reference</p>
+                <p className="text-[10px] text-indigo-400 dark:text-indigo-500">Transfers look, lighting, and aesthetic</p>
+                {styleRefImage ? (
+                  <div className="relative">
+                    <img src={styleRefImage} alt="Style ref"
+                      className="w-full aspect-square object-cover rounded-xl border-2 border-indigo-400 dark:border-indigo-500" />
+                    <button onClick={() => setStyleRefImage(null)}
+                      className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="w-full aspect-square rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-600 flex flex-col items-center justify-center gap-1 hover:bg-indigo-100 dark:hover:bg-indigo-800 transition-colors cursor-pointer text-indigo-400 dark:text-indigo-500">
+                    <Upload className="w-5 h-5" />
+                    <span className="text-[10px] text-center px-1">Upload style image</span>
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0]; if (!f) return;
+                        const reader = new FileReader();
+                        reader.onload = () => setStyleRefImage(reader.result as string);
+                        reader.readAsDataURL(f); e.target.value = '';
+                      }} />
+                  </label>
+                )}
+              </div>
             </div>
-            <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mb-2">Upload any image whose look and feel you want to copy — a painting, a screenshot, a photo with lighting you like. The AI transfers the aesthetic onto your generation.</p>
-            <ImagePickerButton label="" value={styleRefImage} onChange={setStyleRefImage} />
+
+            {/* Structure strength — only when character ref is active */}
+            {useReference && hasRef && (
+              <div className="pt-1">
+                <Slider label="Structure Strength" value={structureStrength} min={0} max={100} onChange={setStructureStrength} />
+                <p className="text-[10px] text-indigo-400 -mt-1"><strong>20–40</strong> = face/hair/body only. <strong>60–80</strong> = also copies pose &amp; outfit.</p>
+              </div>
+            )}
+
+            {/* Appearance notice */}
+            {useReference && hasRef && !aiProfile.appearance && (
+              <p className="text-[10px] text-amber-500 dark:text-amber-400">
+                No appearance description in AI Profile — hair/eye/skin colors may not match. Add one for better results.
+              </p>
+            )}
+            {useReference && hasRef && aiProfile.appearance && (
+              <p className="text-[10px] text-indigo-500 dark:text-indigo-400">
+                <span className="font-medium">Appearance included: </span>
+                {aiProfile.appearance.slice(0, 100)}{aiProfile.appearance.length > 100 ? '…' : ''}
+              </p>
+            )}
+
+            {/* LoRA warning */}
             {usingRefs && selectedLoraChars.length + selectedLoraStyles.length > 0 && (
-              <p className="text-[10px] text-amber-500 mt-2">⚠ LoRAs are ignored when reference images are active (Freepik limitation).</p>
+              <p className="text-[10px] text-amber-500">⚠ LoRAs are ignored when reference images are active (Freepik limitation).</p>
             )}
           </div>
 
