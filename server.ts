@@ -804,130 +804,84 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// ── ShortAPI: image proxy (avoids CORS on result URLs) ───────────────────────
-app.get("/api/image/proxy", async (req, res) => {
-  const url = req.query.url as string;
-  if (!url || !url.startsWith("http")) return res.status(400).json({ error: "Invalid URL" });
-  try {
-    const response = await fetch(url);
-    if (!response.ok) return res.status(response.status).send("Upstream error");
-    const contentType = response.headers.get("content-type") || "image/jpeg";
-    const buffer = await response.arrayBuffer();
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "public, max-age=3600");
-    res.send(Buffer.from(buffer));
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── ShortAPI: image generation (Alibaba WAN 2.6) ─────────────────────────────
-// Temp image store — holds base64 images briefly so ShortAPI can fetch them by URL
-const tempImages: Map<string, { data: string; mimeType: string; expires: number }> = new Map();
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, val] of tempImages.entries()) {
-    if (val.expires < now) tempImages.delete(key);
-  }
-}, 10 * 60 * 1000);
-
-app.get("/api/image/temp/:id", (req, res) => {
-  const entry = tempImages.get(req.params.id);
-  if (!entry || entry.expires < Date.now()) return res.status(404).json({ error: "Image not found or expired" });
-  res.setHeader("Content-Type", entry.mimeType);
-  res.send(Buffer.from(entry.data, "base64"));
-});
-
-// Size presets — must satisfy WAN 2.6 pixel constraints
-// img2img: total pixels 768×768 to 1280×1280 (589,824 – 1,638,400)
-// txt2img: total pixels 1280×1280 to 1440×1440 (1,638,400 – 2,073,600)
-const WAN_SIZES: Record<string, { w: number; h: number }> = {
-  // img2img sizes
-  "1:1":      { w: 1024, h: 1024 },
-  "3:4":      { w: 768,  h: 1024 },
-  "4:3":      { w: 1024, h: 768  },
-  "9:16":     { w: 576,  h: 1024 },
-  "16:9":     { w: 1024, h: 576  },
-  // txt2img sizes (larger — must hit 1280×1280 minimum total)
-  "1:1-large":  { w: 1280, h: 1280 },
-  "3:4-large":  { w: 1110, h: 1480 },
-  "4:3-large":  { w: 1480, h: 1110 },
-};
+// ── Freepik: image generation (Mystic) ───────────────────────────────────────
+// Freepik Mystic: POST /v1/ai/mystic  →  task_id
+// Poll: GET /v1/ai/mystic/{task-id}   →  status COMPLETED, data.generated[]
+// Auth: x-freepik-api-key header (no Bearer)
+// structure_reference: base64 image — preserves character structure/form
+// style_reference:     base64 image — transfers style/aesthetics
 
 app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res) => {
   const {
-    prompt, negativePrompt, inputImageBase64,
-    aspectRatio, numImages, promptExtend,
+    prompt, negativePrompt, aspectRatio,
+    structureReference, styleReference,
+    resolution, model, adherence, structureStrength, hdr, creativeDetailing,
     apiKey: userApiKey,
   } = req.body;
 
   if (!prompt) return res.status(400).json({ error: "Prompt is required." });
-  const apiKey = userApiKey || process.env.SHORTAPI_KEY;
-  if (!apiKey) return res.status(400).json({ error: "ShortAPI key not configured. Add it in Settings." });
+  const apiKey = userApiKey || process.env.FREEPIK_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured. Add it in Settings." });
 
   try {
-    let imageUrl: string | undefined;
-
-    if (inputImageBase64) {
-      const base64Data = inputImageBase64.includes(",") ? inputImageBase64.split(",")[1] : inputImageBase64;
-      const mimeMatch  = inputImageBase64.match(/data:([^;]+);/);
-      const mimeType   = mimeMatch ? mimeMatch[1] : "image/jpeg";
-      const tempId     = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      tempImages.set(tempId, { data: base64Data, mimeType, expires: Date.now() + 15 * 60 * 1000 });
-      const serverBase = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
-      imageUrl = `${serverBase}/api/image/temp/${tempId}`;
-      console.log(`Temp image hosted at: ${imageUrl}`);
-    }
-
-    const isImg2Img = !!imageUrl;
-    const model     = isImg2Img ? "alibaba/wan-2.6/image-to-image" : "alibaba/wan-2.6/text-to-image";
-
-    // Pick the right size preset
-    const sizeKey = isImg2Img ? (aspectRatio || "1:1") : ((aspectRatio || "1:1") + "-large");
-    const size    = WAN_SIZES[sizeKey] || (isImg2Img ? { w: 1024, h: 1024 } : { w: 1280, h: 1280 });
-
-    const args: any = {
-      prompt:         prompt.trim(),
-      width:          size.w,
-      height:         size.h,
-      num_images:     Math.min(4, Math.max(1, numImages || 1)),
-      prompt_extend:  promptExtend || false,
-      ...(negativePrompt?.trim() ? { negative_prompt: negativePrompt.trim() } : {}),
-      ...(isImg2Img ? { image_urls: [imageUrl] } : {}),
+    const body: any = {
+      prompt:    prompt.trim(),
+      resolution: resolution || "2k",
+      aspect_ratio: aspectRatio || "square_1_1",
+      model:     model || "realism",
+      filter_nsfw: true,
+      fixed_generation: false,
     };
 
-    console.log(`WAN 2.6 job — model: ${model}, size: ${size.w}×${size.h}, hasImage: ${isImg2Img}`);
+    if (negativePrompt?.trim()) body.negative_prompt = negativePrompt.trim();
+    if (adherence        !== undefined) body.adherence         = adherence;
+    if (structureStrength !== undefined) body.structure_strength = structureStrength;
+    if (hdr              !== undefined) body.hdr               = hdr;
+    if (creativeDetailing !== undefined) body.creative_detailing = creativeDetailing;
 
-    const response = await fetch("https://api.shortapi.ai/api/v1/job/create", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, args }),
+    // Reference images — sent as base64 directly (no temp URL needed)
+    if (structureReference) {
+      const base64 = structureReference.includes(",") ? structureReference.split(",")[1] : structureReference;
+      body.structure_reference = base64;
+    }
+    if (styleReference) {
+      const base64 = styleReference.includes(",") ? styleReference.split(",")[1] : styleReference;
+      body.style_reference = base64;
+    }
+
+    console.log(`Freepik Mystic — resolution: ${body.resolution}, model: ${body.model}, hasStructureRef: ${!!structureReference}`);
+
+    const response = await fetch("https://api.freepik.com/v1/ai/mystic", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-freepik-api-key": apiKey },
+      body:    JSON.stringify(body),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error(`ShortAPI create job error ${response.status}:`, errText);
-      if (response.status === 401) return res.status(401).json({ error: "Invalid ShortAPI key. Check it in Settings." });
+      console.error(`Freepik error ${response.status}:`, errText);
+      if (response.status === 401) return res.status(401).json({ error: "Invalid Freepik API key. Check it in Settings." });
       return res.status(response.status).json({ error: `Image generation failed: ${errText}` });
     }
 
     const data = await response.json();
-    console.log(`WAN 2.6 job created: ${data.job_id}`);
-    res.json({ jobId: data.job_id, model });
+    const taskId = data?.data?.task_id;
+    console.log(`Freepik task created: ${taskId}`);
+    res.json({ taskId, status: data?.data?.status });
   } catch (e: any) {
-    console.error("WAN 2.6 generation error:", e);
+    console.error("Freepik generation error:", e);
     res.status(500).json({ error: e.message || "Failed to start image generation." });
   }
 });
 
-// Poll ShortAPI job status
-app.get("/api/image/status/:jobId", async (req, res) => {
-  const apiKey = (req.query.api_key as string) || process.env.SHORTAPI_KEY;
-  if (!apiKey) return res.status(400).json({ error: "ShortAPI key not configured." });
+// Poll Freepik task status
+app.get("/api/image/status/:taskId", async (req, res) => {
+  const apiKey = (req.query.api_key as string) || process.env.FREEPIK_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
 
   try {
-    const response = await fetch(`https://api.shortapi.ai/api/v1/job/query?id=${req.params.jobId}`, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
+    const response = await fetch(`https://api.freepik.com/v1/ai/mystic/${req.params.taskId}`, {
+      headers: { "x-freepik-api-key": apiKey },
     });
     if (!response.ok) {
       const errText = await response.text();
@@ -935,47 +889,17 @@ app.get("/api/image/status/:jobId", async (req, res) => {
     }
     const data = await response.json();
 
-    // Log full response when job completes so we can see the structure in Render logs
-    if (data.status === "succeeded" || data.status === "failed") {
-      console.log(`Job ${req.params.jobId} ${data.status}:`, JSON.stringify(data).slice(0, 800));
+    if (data?.data?.status === "COMPLETED") {
+      console.log(`Freepik task ${req.params.taskId} COMPLETED — ${data.data.generated?.length || 0} image(s)`);
     }
 
-    // Normalize image URLs out of every possible structure
-    if (data.status === "succeeded") {
-      const urls: string[] = [];
-      const r = data.result ?? data.output ?? data;
-
-      if (Array.isArray(r?.images))     r.images.forEach((i: any)    => { const u = typeof i === "string" ? i : (i.url || i.image_url); if (u) urls.push(u); });
-      if (Array.isArray(r?.image_urls)) r.image_urls.forEach((u: string) => urls.push(u));
-      if (Array.isArray(r?.output))     r.output.forEach((u: any)    => { const s = typeof u === "string" ? u : u.url; if (s) urls.push(s); });
-      if (typeof r?.image_url === "string") urls.push(r.image_url);
-      if (typeof r?.url       === "string") urls.push(r.url);
-      if (typeof r?.image     === "string") urls.push(r.image);
-
-      // Last resort: scan for any image URL in the raw response
-      if (urls.length === 0) {
-        const matches = JSON.stringify(data).match(/https?:\/\/[^\s"\\]+\.(?:jpg|jpeg|png|webp|gif)[^\s"\\]*/gi) || [];
-        urls.push(...matches);
-      }
-
-      // Proxy all URLs through our server to avoid CORS issues
-      const serverBase = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
-      const cleanUrls  = [...new Set(urls.filter(Boolean))];
-      const proxiedUrls = cleanUrls.map(u => `${serverBase}/api/image/proxy?url=${encodeURIComponent(u)}`);
-
-      console.log(`Returning ${proxiedUrls.length} proxied image URL(s)`);
-      return res.json({ ...data, _imageUrls: proxiedUrls });
-    }
-
-    res.json(data);
+    // Normalize: return _imageUrls for the client
+    const generated: string[] = data?.data?.generated || [];
+    res.json({ ...data?.data, _imageUrls: generated });
   } catch (e: any) {
-    res.status(500).json({ error: e.message || "Failed to check job status." });
+    res.status(500).json({ error: e.message || "Failed to check task status." });
   }
 });
-
-
-
-
 
 
 app.post("/api/analyze-persona", async (req, res) => {
