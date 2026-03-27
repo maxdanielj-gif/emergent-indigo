@@ -35,7 +35,7 @@ function Slider({ label, value, min, max, onChange }: {
     <div>
       <div className="flex justify-between mb-1">
         <span className="text-xs font-medium text-indigo-700 dark:text-indigo-300">{label}</span>
-        <span className="text-xs text-indigo-500">{value}</span>
+        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{value}</span>
       </div>
       <div className="relative w-full h-6 flex items-center">
         <div className="absolute w-full h-2 bg-indigo-200 dark:bg-indigo-700 rounded-full" />
@@ -255,10 +255,13 @@ const ImageGeneratorScreen: React.FC = () => {
                 </div>
               )}
               <Slider
-                label={`Structure Strength: ${structureStrength} — how closely to follow the reference`}
+                label="Structure Strength"
                 value={structureStrength} min={0} max={100}
                 onChange={setStructureStrength}
               />
+              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 -mt-2">
+                On Freepik: <strong>higher = closer to reference image</strong>. Lower values give more creative freedom. Default 70 is a good balance.
+              </p>
             </>
           )}
         </div>
@@ -317,9 +320,9 @@ const ImageGeneratorScreen: React.FC = () => {
                 placeholder="What to avoid — e.g. blurry, distorted face, extra limbs"
                 className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
             </div>
-            <Slider label={`Adherence: ${adherence} — prompt vs. style fidelity`} value={adherence} min={0} max={100} onChange={setAdherence} />
-            <Slider label={`HDR: ${hdr} — dynamic range and contrast`} value={hdr} min={0} max={100} onChange={setHdr} />
-            <Slider label={`Creative Detailing: ${creativeDetailing} — detail vs. natural look`} value={creativeDetailing} min={0} max={100} onChange={setCreativeDetailing} />
+            <Slider label="Adherence — prompt vs. style fidelity" value={adherence} min={0} max={100} onChange={setAdherence} />
+            <Slider label="HDR — dynamic range and contrast" value={hdr} min={0} max={100} onChange={setHdr} />
+            <Slider label="Creative Detailing — detail vs. natural look" value={creativeDetailing} min={0} max={100} onChange={setCreativeDetailing} />
             <p className="text-[10px] text-indigo-400">Defaults: Adherence 50, HDR 50, Creative Detailing 33</p>
           </div>
         )}

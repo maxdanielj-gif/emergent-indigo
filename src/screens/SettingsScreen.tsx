@@ -14,7 +14,7 @@ const SettingsScreen: React.FC = () => {
     anthropicApiKey, setAnthropicApiKey,
     elevenLabsApiKey, setElevenLabsApiKey,
     geminiApiKey, setGeminiApiKey,
-    freepikApiKey, setShortAPIApiKey,
+    freepikApiKey, setFreepikApiKey,
     setShowTutorial,
     autoSaveChat, setAutoSaveChat, autoSaveChatInterval, setAutoSaveChatInterval,
     autoJsonBackup, setAutoJsonBackup, autoJsonBackupInterval, setAutoJsonBackupInterval,
@@ -40,14 +40,14 @@ const SettingsScreen: React.FC = () => {
   const [localAnthropicApiKey,    setLocalAnthropicApiKey]    = useState(anthropicApiKey || '');
   const [localElevenLabsApiKey,   setLocalElevenLabsApiKey]   = useState(elevenLabsApiKey || '');
   const [localGeminiApiKey,       setLocalGeminiApiKey]       = useState(geminiApiKey || '');
-  const [localShortAPIApiKey,  setLocalShortAPIApiKey]  = useState(freepikApiKey || '');
+  const [localFreepikApiKey,  setLocalFreepikApiKey]  = useState(freepikApiKey || '');
 
   // Sync local key fields once the context loads saved values from IndexedDB
   React.useEffect(() => { setLocalAnthropicApiKey(anthropicApiKey || ''); }, [anthropicApiKey]);
   React.useEffect(() => { setLocalAsyncApiKey(asyncApiKey || ''); }, [asyncApiKey]);
   React.useEffect(() => { setLocalElevenLabsApiKey(elevenLabsApiKey || ''); }, [elevenLabsApiKey]);
   React.useEffect(() => { setLocalGeminiApiKey(geminiApiKey || ''); }, [geminiApiKey]);
-  React.useEffect(() => { setLocalShortAPIApiKey(freepikApiKey || ''); }, [freepikApiKey]);
+  React.useEffect(() => { setLocalFreepikApiKey(freepikApiKey || ''); }, [freepikApiKey]);
   const [localSyncId,          setLocalSyncId]          = useState(userId || '');
   const [recoveryId,           setRecoveryId]           = useState('');
   const [isExporting,          setIsExporting]          = useState(false);
@@ -129,9 +129,9 @@ const SettingsScreen: React.FC = () => {
     addToast({ title: 'Saved', message: 'Gemini API key saved.', type: 'success' });
   };
 
-  const handleSaveShortAPIKey = () => {
-    setShortAPIApiKey(localShortAPIApiKey.trim() || null);
-    addToast({ title: 'Saved', message: 'ShortAPI token saved.', type: 'success' });
+  const handleSaveFreepikKey = () => {
+    setFreepikApiKey(localFreepikApiKey.trim() || null);
+    addToast({ title: 'Saved', message: 'Freepik API key saved.', type: 'success' });
   };
 
   // ── Notifications ────────────────────────────────────────────────
@@ -410,23 +410,23 @@ const SettingsScreen: React.FC = () => {
               </p>
             </div>
 
-            {/* ShortAPI */}
+            {/* Freepik */}
             <div>
               <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
-                ShortAPI Token <span className="text-indigo-400 dark:text-indigo-500 font-normal">(required for image generation)</span>
+                Freepik API Key <span className="text-indigo-400 dark:text-indigo-500 font-normal">(required for image generation)</span>
               </label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
                   <input
                     type="password"
-                    value={localShortAPIApiKey}
-                    onChange={(e) => setLocalShortAPIApiKey(e.target.value)}
+                    value={localFreepikApiKey}
+                    onChange={(e) => setLocalFreepikApiKey(e.target.value)}
                     placeholder="Your Freepik API key"
                     className="app-input pl-9"
                   />
                 </div>
-                <button onClick={handleSaveShortAPIKey} className="app-btn-primary">Save</button>
+                <button onClick={handleSaveFreepikKey} className="app-btn-primary">Save</button>
               </div>
               <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
                 Get a key at <a href="https://www.freepik.com/developers/dashboard" target="_blank" rel="noreferrer" className="underline">freepik.com/developers</a>. Enables AI image generation. New accounts get $5 in free credits.
