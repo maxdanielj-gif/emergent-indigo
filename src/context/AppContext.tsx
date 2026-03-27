@@ -1275,7 +1275,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           method: 'POST',
           headers: { 
             'Content-Type': 'application/octet-stream',
-            'Content-Encoding': 'gzip'
+            // No Content-Encoding: gzip — Render's proxy would try to decompress it,
+            // breaking the request. Server detects gzip by magic bytes instead.
           },
           body: compressed
         });
