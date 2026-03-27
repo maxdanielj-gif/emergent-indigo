@@ -806,6 +806,30 @@ app.post("/api/chat", async (req, res) => {
 
 // ── Freepik: image generation (Mystic) ───────────────────────────────────────
 
+// Temp image store — used to give Freepik HTTPS URLs for LoRA training images
+// Freepik requires HTTPS URLs for training; base64 is rejected
+const tempImages: Map<string, { data: string; mimeType: string; expires: number }> = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of tempImages.entries()) if (v.expires < now) tempImages.delete(k);
+}, 5 * 60 * 1000);
+
+app.get("/api/image/temp/:id", (req, res) => {
+  const entry = tempImages.get(req.params.id);
+  if (!entry || entry.expires < Date.now()) return res.status(404).send("Not found or expired");
+  res.setHeader("Content-Type", entry.mimeType);
+  res.send(Buffer.from(entry.data, "base64"));
+});
+
+// Helper: store base64 image temporarily and return an HTTPS URL
+function hostTempImage(base64: string, mimeType = "image/jpeg"): string {
+  const id      = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const rawData = base64.includes(",") ? base64.split(",")[1] : base64;
+  tempImages.set(id, { data: rawData, mimeType, expires: Date.now() + 30 * 60 * 1000 }); // 30 min
+  const serverBase = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+  return `${serverBase}/api/image/temp/${id}`;
+}
+
 app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res) => {
   const {
     prompt, negativePrompt, aspectRatio,
@@ -855,7 +879,7 @@ app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res
       if (Object.keys(styling).length > 0) body.styling = styling;
     }
 
-    console.log(`Freepik Mystic — ${body.resolution}, model:${body.model}, structRef:${!!structureReference}, styleRef:${!!styleReference}, loraChars:${loraCharacters?.length||0}`);
+    console.log(`Freepik Mystic — ${body.resolution}, model:${body.model}, structRef:${!!structureReference}, styleRef:${!!styleReference}, loraChars:${loraCharacters?.length||0}, prompt starts: "${body.prompt.slice(0,80)}"`);
 
     const response = await fetch("https://api.freepik.com/v1/ai/mystic", {
       method:  "POST",
@@ -920,14 +944,41 @@ app.get("/api/image/loras", async (req, res) => {
   }
 });
 
-// Train a character LoRA from uploaded images
+// Poll LoRA training task status
+app.get("/api/image/loras/status", async (req, res) => {
+  const apiKey = (req.query.api_key as string) || process.env.FREEPIK_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
+  try {
+    // Freepik returns all LoRAs including training status
+    const r = await fetch("https://api.freepik.com/v1/ai/loras", {
+      headers: { "x-freepik-api-key": apiKey },
+    });
+    if (!r.ok) return res.status(r.status).json({ error: await r.text() });
+    res.json(await r.json());
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Train a character LoRA — Freepik requires HTTPS image URLs, not base64
 app.post("/api/image/loras/character", express.json({ limit: "50mb" }), async (req, res) => {
   const { name, description, gender, images, apiKey: userApiKey } = req.body;
   if (!name || !images?.length) return res.status(400).json({ error: "Name and images are required." });
   const apiKey = userApiKey || process.env.FREEPIK_API_KEY;
   if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
+
   try {
-    const payload: any = { name: name.trim(), images, quality: "high" };
+    // Convert base64 images to temporary HTTPS URLs that Freepik can fetch
+    const imageUrls = images.map((img: string) => {
+      if (img.startsWith("http")) return img; // already a URL
+      const mimeMatch = img.match(/data:([^;]+);/);
+      const mimeType  = mimeMatch ? mimeMatch[1] : "image/jpeg";
+      return hostTempImage(img, mimeType);
+    });
+
+    console.log(`LoRA character training: ${name}, ${imageUrls.length} images hosted at temp URLs`);
+
+    const payload: any = { name: name.trim(), images: imageUrls, quality: "high" };
     if (description?.trim()) payload.description = description.trim();
     if (gender) payload.gender = gender;
 
@@ -949,22 +1000,25 @@ app.post("/api/image/loras/character", express.json({ limit: "50mb" }), async (r
   }
 });
 
-// Train a style LoRA from uploaded images
+// Train a style LoRA — same HTTPS URL requirement
 app.post("/api/image/loras/style", express.json({ limit: "50mb" }), async (req, res) => {
   const { name, description, images, apiKey: userApiKey } = req.body;
   if (!name || !images?.length) return res.status(400).json({ error: "Name and images are required." });
   const apiKey = userApiKey || process.env.FREEPIK_API_KEY;
   if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
   try {
+    const imageUrls = images.map((img: string) => {
+      if (img.startsWith("http")) return img;
+      const mimeMatch = img.match(/data:([^;]+);/);
+      return hostTempImage(img, mimeMatch ? mimeMatch[1] : "image/jpeg");
+    });
+
     const r = await fetch("https://api.freepik.com/v1/ai/loras/styles", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-freepik-api-key": apiKey },
-      body: JSON.stringify({ name: name.trim(), description: description?.trim() || "", images, quality: "high" }),
+      body: JSON.stringify({ name: name.trim(), description: description?.trim() || "", images: imageUrls, quality: "high" }),
     });
-    if (!r.ok) {
-      const errText = await r.text();
-      return res.status(r.status).json({ error: errText });
-    }
+    if (!r.ok) return res.status(r.status).json({ error: await r.text() });
     res.json(await r.json());
   } catch (e: any) {
     res.status(500).json({ error: e.message });
