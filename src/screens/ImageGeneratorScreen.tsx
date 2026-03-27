@@ -52,15 +52,24 @@ const ImageGeneratorScreen: React.FC = () => {
     setStatusMsg('Creating job…');
     setResultImages([]);
 
+    // Build enriched prompt — prepend appearance description so the model
+    // gets color/detail guidance even when a reference image is used as a pose guide
+    const hasRef = useReference && !!aiProfile.referenceImage;
+    const appearanceDesc = aiProfile.appearance?.trim();
+    let finalPrompt = prompt.trim();
+    if (hasRef && appearanceDesc) {
+      finalPrompt = `${appearanceDesc}. ${finalPrompt}`;
+    }
+
     try {
       const body: any = {
-        prompt: prompt.trim(),
+        prompt: finalPrompt,
         model,
         aspectRatio,
         performance,
         apiKey: shortApiKey,
         ...(negPrompt.trim() ? { negativePrompt: negPrompt.trim() } : {}),
-        ...(useReference && aiProfile.referenceImage ? { inputImageBase64: aiProfile.referenceImage } : {}),
+        ...(hasRef ? { inputImageBase64: aiProfile.referenceImage } : {}),
       };
 
       const res = await fetch('/api/image/generate', {
@@ -91,27 +100,19 @@ const ImageGeneratorScreen: React.FC = () => {
     pollRef.current = setInterval(async () => {
       try {
         const res = await fetch(`/api/image/status/${jobId}?api_key=${encodeURIComponent(shortApiKey || '')}`);
-        if (!res.ok) return; // keep trying
+        if (!res.ok) return;
 
         const data = await res.json();
+        const status = (data.status || '').toLowerCase();
 
-        if (data.status === 'succeeded') {
+        if (status === 'succeeded' || status === 'completed' || status === 'success') {
           clearInterval(pollRef.current!);
           pollRef.current = null;
 
-          // Extract image URLs from result
-          const urls: string[] = [];
-          if (data.result?.images)    urls.push(...data.result.images.map((i: any) => i.url || i));
-          if (data.result?.image_url) urls.push(data.result.image_url);
-          if (data.result?.url)       urls.push(data.result.url);
-          if (typeof data.result === 'string') urls.push(data.result);
-
-          if (urls.length === 0) {
-            // Try to find any URL in the result
-            const resultStr = JSON.stringify(data.result || {});
-            const urlMatch = resultStr.match(/https?:\/\/[^\s"]+\.(jpg|jpeg|png|webp)/i);
-            if (urlMatch) urls.push(urlMatch[0]);
-          }
+          // Use server-normalized URLs first, then fall back
+          const urls: string[] = data._imageUrls && data._imageUrls.length > 0
+            ? data._imageUrls
+            : [];
 
           if (urls.length > 0) {
             setResultImages(urls);
@@ -129,17 +130,19 @@ const ImageGeneratorScreen: React.FC = () => {
             });
             addToast({ title: 'Done!', message: `${urls.length} image${urls.length > 1 ? 's' : ''} saved to gallery.`, type: 'success' });
           } else {
+            // Succeeded but couldn't extract URL — show raw result for debugging
             setJobStatus('failed');
-            setStatusMsg('Job succeeded but no image URL found in response.');
+            setStatusMsg(`Job succeeded but no image URL found. Raw result: ${JSON.stringify(data.result || data.output || '').slice(0, 200)}`);
           }
-        } else if (data.status === 'failed' || data.status === 'error') {
+        } else if (status === 'failed' || status === 'error' || status === 'cancelled') {
           clearInterval(pollRef.current!);
           pollRef.current = null;
+          const msg = data.error || data.message || data.reason || 'Generation failed.';
           setJobStatus('failed');
-          setStatusMsg(data.error || data.message || 'Generation failed.');
-          addToast({ title: 'Failed', message: data.error || 'Generation failed.', type: 'error' });
+          setStatusMsg(msg);
+          addToast({ title: 'Failed', message: msg, type: 'error' });
         }
-        // otherwise keep polling (pending/processing)
+        // pending / processing / queued / running — keep polling
       } catch {}
     }, 3000);
 
@@ -179,19 +182,32 @@ const ImageGeneratorScreen: React.FC = () => {
 
       {/* Reference image toggle */}
       {hasReference && (
-        <div className="flex items-center justify-between p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
-          <div className="flex items-center gap-3">
-            <img src={aiProfile.referenceImage!} alt="Reference"
-              className="w-10 h-10 rounded-lg object-cover border border-indigo-200 dark:border-indigo-700" />
-            <div>
-              <p className="text-sm font-medium text-indigo-900 dark:text-indigo-100">Use {aiProfile.name}'s reference image</p>
-              <p className="text-xs text-indigo-500 dark:text-indigo-400">Guides the AI to match the persona's appearance</p>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
+            <div className="flex items-center gap-3">
+              <img src={aiProfile.referenceImage!} alt="Reference"
+                className="w-10 h-10 rounded-lg object-cover border border-indigo-200 dark:border-indigo-700" />
+              <div>
+                <p className="text-sm font-medium text-indigo-900 dark:text-indigo-100">Use {aiProfile.name}'s reference image</p>
+                <p className="text-xs text-indigo-500 dark:text-indigo-400">Sends image + appearance description for accurate colors</p>
+              </div>
             </div>
+            <button onClick={() => setUseReference(!useReference)}
+              className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${useReference ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
+              <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${useReference ? 'translate-x-2' : '-translate-x-2'}`} />
+            </button>
           </div>
-          <button onClick={() => setUseReference(!useReference)}
-            className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${useReference ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
-            <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${useReference ? 'translate-x-2' : '-translate-x-2'}`} />
-          </button>
+          {useReference && aiProfile.appearance && (
+            <div className="px-3 py-2 bg-indigo-100 dark:bg-indigo-800/50 rounded-lg text-xs text-indigo-600 dark:text-indigo-300">
+              <span className="font-medium">Appearance description included: </span>
+              {aiProfile.appearance.slice(0, 100)}{aiProfile.appearance.length > 100 ? '…' : ''}
+            </div>
+          )}
+          {useReference && !aiProfile.appearance && (
+            <div className="px-3 py-2 bg-amber-50 dark:bg-amber-900/30 rounded-lg text-xs text-amber-600 dark:text-amber-400">
+              No appearance description set on {aiProfile.name}'s profile — hair/eye/skin colors may not match. Add one in AI Profile → Appearance.
+            </div>
+          )}
         </div>
       )}
 
