@@ -819,7 +819,7 @@ app.post("/api/image/generate", express.json(), async (req, res) => {
     if (negativePrompt) body.parameters = { negative_prompt: negativePrompt };
     if (width || height) body.parameters = { ...body.parameters, width: width || 1024, height: height || 1024 };
 
-    const response = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
+    const response = await fetch(`https://router.huggingface.co/hf-inference/models/${modelId}`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
