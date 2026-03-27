@@ -824,13 +824,12 @@ app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res
       const mimeMatch  = inputImageBase64.match(/data:([^;]+);/);
       const mimeType   = mimeMatch ? mimeMatch[1] : "image/jpeg";
 
-      // Qwen models are instruction-based — just image + prompt, no strength param
-      const isQwen = modelId.toLowerCase().includes("qwen");
+      // img2img: send reference image + text instruction
       body = {
         inputs: prompt,
         parameters: {
           image:           `data:${mimeType};base64,${base64Data}`,
-          ...(isQwen ? {} : { strength: strength ?? 0.75 }),
+          strength:        strength ?? 0.75,
           negative_prompt: negativePrompt || undefined,
         },
       };
@@ -852,7 +851,7 @@ app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res
       if (Object.keys(body.parameters).length === 0) delete body.parameters;
     }
 
-    const response = await fetch(`https://router.huggingface.co/hf-inference/models/${modelId}`, {
+    const response = await fetch(`https://router.huggingface.co/fal-ai/models/${modelId}`, {
       method: "POST",
       headers: {
         "Authorization":     `Bearer ${apiKey}`,
