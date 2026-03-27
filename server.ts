@@ -805,17 +805,13 @@ app.post("/api/chat", async (req, res) => {
 });
 
 // ── Freepik: image generation (Mystic) ───────────────────────────────────────
-// Freepik Mystic: POST /v1/ai/mystic  →  task_id
-// Poll: GET /v1/ai/mystic/{task-id}   →  status COMPLETED, data.generated[]
-// Auth: x-freepik-api-key header (no Bearer)
-// structure_reference: base64 image — preserves character structure/form
-// style_reference:     base64 image — transfers style/aesthetics
 
 app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res) => {
   const {
     prompt, negativePrompt, aspectRatio,
     structureReference, styleReference,
     resolution, model, adherence, structureStrength, hdr, creativeDetailing,
+    loraCharacters, loraStyles,   // arrays of { id, strength }
     apiKey: userApiKey,
   } = req.body;
 
@@ -825,31 +821,41 @@ app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res
 
   try {
     const body: any = {
-      prompt:    prompt.trim(),
-      resolution: resolution || "2k",
-      aspect_ratio: aspectRatio || "square_1_1",
-      model:     model || "realism",
-      filter_nsfw: true,
+      prompt:           prompt.trim(),
+      resolution:       resolution       || "2k",
+      aspect_ratio:     aspectRatio      || "square_1_1",
+      model:            model            || "realism",
+      filter_nsfw:      true,
       fixed_generation: false,
     };
 
-    if (negativePrompt?.trim()) body.negative_prompt = negativePrompt.trim();
-    if (adherence        !== undefined) body.adherence         = adherence;
+    if (negativePrompt?.trim())          body.negative_prompt    = negativePrompt.trim();
+    if (adherence        !== undefined)  body.adherence          = adherence;
     if (structureStrength !== undefined) body.structure_strength = structureStrength;
-    if (hdr              !== undefined) body.hdr               = hdr;
+    if (hdr              !== undefined)  body.hdr                = hdr;
     if (creativeDetailing !== undefined) body.creative_detailing = creativeDetailing;
 
-    // Reference images — sent as base64 directly (no temp URL needed)
     if (structureReference) {
-      const base64 = structureReference.includes(",") ? structureReference.split(",")[1] : structureReference;
-      body.structure_reference = base64;
+      body.structure_reference = structureReference.includes(",")
+        ? structureReference.split(",")[1] : structureReference;
     }
     if (styleReference) {
-      const base64 = styleReference.includes(",") ? styleReference.split(",")[1] : styleReference;
-      body.style_reference = base64;
+      body.style_reference = styleReference.includes(",")
+        ? styleReference.split(",")[1] : styleReference;
     }
 
-    console.log(`Freepik Mystic — resolution: ${body.resolution}, model: ${body.model}, hasStructureRef: ${!!structureReference}`);
+    // LoRAs — only when no structure/style references (Freepik ignores LoRAs when refs are present)
+    const hasRefs = !!(structureReference || styleReference);
+    if (!hasRefs) {
+      const styling: any = {};
+      if (Array.isArray(loraCharacters) && loraCharacters.length > 0)
+        styling.characters = loraCharacters.map((c: any) => ({ id: String(c.id), strength: c.strength ?? 100 }));
+      if (Array.isArray(loraStyles) && loraStyles.length > 0)
+        styling.styles = loraStyles.map((s: any) => ({ name: String(s.name), strength: s.strength ?? 100 }));
+      if (Object.keys(styling).length > 0) body.styling = styling;
+    }
+
+    console.log(`Freepik Mystic — ${body.resolution}, model:${body.model}, structRef:${!!structureReference}, styleRef:${!!styleReference}, loraChars:${loraCharacters?.length||0}`);
 
     const response = await fetch("https://api.freepik.com/v1/ai/mystic", {
       method:  "POST",
@@ -888,16 +894,118 @@ app.get("/api/image/status/:taskId", async (req, res) => {
       return res.status(response.status).json({ error: errText });
     }
     const data = await response.json();
-
-    if (data?.data?.status === "COMPLETED") {
+    if (data?.data?.status === "COMPLETED")
       console.log(`Freepik task ${req.params.taskId} COMPLETED — ${data.data.generated?.length || 0} image(s)`);
-    }
 
-    // Normalize: return _imageUrls for the client
     const generated: string[] = data?.data?.generated || [];
     res.json({ ...data?.data, _imageUrls: generated });
   } catch (e: any) {
     res.status(500).json({ error: e.message || "Failed to check task status." });
+  }
+});
+
+// ── Freepik: LoRAs ────────────────────────────────────────────────────────────
+// List all available LoRAs (Freepik defaults + user-trained)
+app.get("/api/image/loras", async (req, res) => {
+  const apiKey = (req.query.api_key as string) || process.env.FREEPIK_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
+  try {
+    const r = await fetch("https://api.freepik.com/v1/ai/loras", {
+      headers: { "x-freepik-api-key": apiKey },
+    });
+    if (!r.ok) return res.status(r.status).json({ error: await r.text() });
+    res.json(await r.json());
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Train a character LoRA from uploaded images
+app.post("/api/image/loras/character", express.json({ limit: "50mb" }), async (req, res) => {
+  const { name, description, gender, images, apiKey: userApiKey } = req.body;
+  if (!name || !images?.length) return res.status(400).json({ error: "Name and images are required." });
+  const apiKey = userApiKey || process.env.FREEPIK_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
+  try {
+    const payload: any = { name: name.trim(), images, quality: "high" };
+    if (description?.trim()) payload.description = description.trim();
+    if (gender) payload.gender = gender;
+
+    const r = await fetch("https://api.freepik.com/v1/ai/loras/characters", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-freepik-api-key": apiKey },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const errText = await r.text();
+      console.error(`LoRA character training error ${r.status}:`, errText);
+      return res.status(r.status).json({ error: errText });
+    }
+    const data = await r.json();
+    console.log(`LoRA character training started: ${data?.data?.task_id}`);
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Train a style LoRA from uploaded images
+app.post("/api/image/loras/style", express.json({ limit: "50mb" }), async (req, res) => {
+  const { name, description, images, apiKey: userApiKey } = req.body;
+  if (!name || !images?.length) return res.status(400).json({ error: "Name and images are required." });
+  const apiKey = userApiKey || process.env.FREEPIK_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
+  try {
+    const r = await fetch("https://api.freepik.com/v1/ai/loras/styles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-freepik-api-key": apiKey },
+      body: JSON.stringify({ name: name.trim(), description: description?.trim() || "", images, quality: "high" }),
+    });
+    if (!r.ok) {
+      const errText = await r.text();
+      return res.status(r.status).json({ error: errText });
+    }
+    res.json(await r.json());
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Freepik: style transfer ───────────────────────────────────────────────────
+app.post("/api/image/style-transfer", express.json({ limit: "20mb" }), async (req, res) => {
+  const { image, referenceImage, apiKey: userApiKey } = req.body;
+  if (!image || !referenceImage) return res.status(400).json({ error: "Both image and referenceImage are required." });
+  const apiKey = userApiKey || process.env.FREEPIK_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
+  try {
+    const toBase64 = (s: string) => s.includes(",") ? s.split(",")[1] : s;
+    const r = await fetch("https://api.freepik.com/v1/ai/image-style-transfer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-freepik-api-key": apiKey },
+      body: JSON.stringify({ image: toBase64(image), reference_image: toBase64(referenceImage) }),
+    });
+    if (!r.ok) return res.status(r.status).json({ error: await r.text() });
+    const data = await r.json();
+    res.json({ taskId: data?.data?.task_id, status: data?.data?.status });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Poll style transfer status
+app.get("/api/image/style-transfer/:taskId", async (req, res) => {
+  const apiKey = (req.query.api_key as string) || process.env.FREEPIK_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
+  try {
+    const r = await fetch(`https://api.freepik.com/v1/ai/image-style-transfer/${req.params.taskId}`, {
+      headers: { "x-freepik-api-key": apiKey },
+    });
+    if (!r.ok) return res.status(r.status).json({ error: await r.text() });
+    const data = await r.json();
+    const generated: string[] = data?.data?.generated || [];
+    res.json({ ...data?.data, _imageUrls: generated });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
 });
 
