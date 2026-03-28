@@ -8,22 +8,31 @@ import {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-// Engine choices
+// Engine choices (top-level: Mystic vs Klein)
 const ENGINES = [
   { label: 'Mystic — Ultra-realistic, LoRA support', value: 'mystic' },
-  { label: 'Flux 2 Klein — Fast, best character consistency', value: 'klein' },
+  { label: 'Flux 2 Klein — Fast, up to 4 reference images', value: 'klein' },
 ] as const;
 type Engine = 'mystic' | 'klein';
 
-// Mystic aspect ratios
+// Mystic aspect ratios — full list from API docs
 const ASPECT_RATIOS_MYSTIC = [
-  { label: 'Square (1:1)',      value: 'square_1_1'      },
-  { label: 'Portrait (3:4)',    value: 'traditional_3_4' },
-  { label: 'Landscape (4:3)',   value: 'classic_4_3'     },
-  { label: 'Tall (9:16)',       value: 'social_story_9_16'},
-  { label: 'Wide (16:9)',       value: 'widescreen_16_9' },
+  { label: 'Square (1:1)',            value: 'square_1_1'               },
+  { label: 'Portrait (2:3)',          value: 'portrait_2_3'             },
+  { label: 'Portrait (3:4)',          value: 'traditional_3_4'          },
+  { label: 'Landscape (4:3)',         value: 'classic_4_3'              },
+  { label: 'Landscape (3:2)',         value: 'standard_3_2'             },
+  { label: 'Tall (9:16)',             value: 'social_story_9_16'        },
+  { label: 'Wide (16:9)',             value: 'widescreen_16_9'          },
+  { label: 'Wide (2:1)',              value: 'horizontal_2_1'           },
+  { label: 'Tall (1:2)',              value: 'vertical_1_2'             },
+  { label: 'Phone wide (20:9)',       value: 'smartphone_horizontal_20_9'},
+  { label: 'Phone tall (9:20)',       value: 'smartphone_vertical_9_20' },
+  { label: 'Social (4:5)',            value: 'social_post_4_5'          },
+  { label: 'Social (5:4)',            value: 'social_5_4'               },
 ];
-// Klein supports more ratios
+
+// Klein supports the same set
 const ASPECT_RATIOS_KLEIN = [
   { label: 'Square (1:1)',      value: 'square_1_1'      },
   { label: 'Portrait (2:3)',    value: 'portrait_2_3'    },
@@ -36,14 +45,29 @@ const ASPECT_RATIOS_KLEIN = [
 ];
 
 const RESOLUTIONS = [
-  { label: '1K — Fast',     value: '1k' },
-  { label: '2K — High res', value: '2k' },
+  { label: '1K — Fast',        value: '1k' },
+  { label: '2K — High res',    value: '2k' },
   { label: '4K — Mystic only', value: '4k' },
 ];
+
+// Mystic models — exact API enum values.
+// fluid, flexible, super_real, editorial_portraits all IGNORE LoRAs.
+// Only realism and zen support LoRAs.
 const MODELS = [
-  { label: 'Realism (photorealistic)', value: 'realism' },
-  { label: 'Anime',                    value: 'anime'   },
-  { label: '2.5D',                     value: '2_5d'    },
+  { label: 'Realism — photorealistic, less AI look',         value: 'realism',             loraOk: true  },
+  { label: 'Zen — clean, smooth, fewer details',             value: 'zen',                  loraOk: true  },
+  { label: 'Fluid — best prompt adherence (Google Imagen)',  value: 'fluid',                loraOk: false },
+  { label: 'Flexible — vivid, great for illustrations',      value: 'flexible',             loraOk: false },
+  { label: 'Super Real — near-photographic realism',         value: 'super_real',           loraOk: false },
+  { label: 'Editorial Portraits — hyperrealistic close-ups', value: 'editorial_portraits',  loraOk: false },
+];
+
+// Mystic render engines
+const MYSTIC_ENGINES = [
+  { label: 'Automatic (recommended)', value: 'automatic'        },
+  { label: 'Illusio — smooth, soft',  value: 'magnific_illusio' },
+  { label: 'Sharpy — sharp, grainy',  value: 'magnific_sharpy'  },
+  { label: 'Sparkle — middle ground', value: 'magnific_sparkle' },
 ];
 const TABS = ['Generate', 'Style Transfer', 'Character LoRA'] as const;
 type Tab = typeof TABS[number];
@@ -129,6 +153,8 @@ const ImageGeneratorScreen: React.FC = () => {
   const [aspectRatio,       setAspectRatio]       = useState('square_1_1');
   const [resolution,        setResolution]        = useState('2k');
   const [model,             setModel]             = useState('realism');
+  const [mysticEngine,      setMysticEngine]      = useState('automatic');
+  const [fixedGeneration,   setFixedGeneration]   = useState(false);
   const [structureStrength, setStructureStrength] = useState(35);
   const [adherence,         setAdherence]         = useState(50);
   const [hdr,               setHdr]               = useState(50);
@@ -274,7 +300,13 @@ const ImageGeneratorScreen: React.FC = () => {
     setJobStatus('creating'); setStatusMsg('Creating task…'); setResultImages([]);
 
     const hasStructureRef = useReference && hasRef;
-    const usingRefs = hasStructureRef && !!styleRefImage;
+    // Per Freepik docs: LoRAs are ignored when structure_reference OR style_reference
+    // is present — either one alone is enough to disable them
+    const usingRefs = hasStructureRef || !!styleRefImage;
+    // Also check model LoRA compatibility
+    const selectedModel = MODELS.find(m => m.value === model);
+    const modelSupportsLoras = selectedModel?.loraOk ?? true;
+    const lorasBlocked = usingRefs || !modelSupportsLoras;
     const appearance = aiProfile.appearance?.trim();
     let finalPrompt = prompt.trim();
     // Always prepend appearance description — not just when structure ref is on
@@ -321,27 +353,28 @@ const ImageGeneratorScreen: React.FC = () => {
       // ── Mystic ────────────────────────────────────────────────────────────
       } else {
         let enrichedPrompt = finalPrompt;
-        // Inject @charactername — Freepik requires the LoRA name in the prompt,
-        // NOT the numeric ID. e.g. @sara not @2
-        if (!usingRefs && selectedLoraChars.length > 0) {
+        // Inject @charactername for LoRA characters (only when LoRAs aren't blocked)
+        if (!lorasBlocked && selectedLoraChars.length > 0) {
           selectedLoraChars.forEach((c: any) => {
-            // c.name is the LoRA's name string; c.id is the numeric ID
-            // The @ syntax uses the name
             const tag = `@${c.name || c.id}`;
             if (!enrichedPrompt.includes(tag)) enrichedPrompt = `${tag} ${enrichedPrompt}`;
           });
         }
         promptRef.current = enrichedPrompt;
-        console.log(`[ImageGen Mystic] prompt: "${enrichedPrompt.slice(0,120)}", structRef:${hasStructureRef}, styleRef:${!!styleRefImage}, loraChars:${selectedLoraChars.length}`);
+        console.log(`[ImageGen Mystic] prompt: "${enrichedPrompt.slice(0,120)}", structRef:${hasStructureRef}, styleRef:${!!styleRefImage}, model:${model}, lorasBlocked:${lorasBlocked}, loraChars:${selectedLoraChars.length}`);
 
         const body: any = {
           prompt: enrichedPrompt, aspectRatio, resolution, model,
-          adherence, hdr, creativeDetailing, apiKey: freepikApiKey,
+          creative_detailing: creativeDetailing,
+          engine: mysticEngine,
+          fixed_generation: fixedGeneration,
+          apiKey: freepikApiKey,
           ...(negPrompt.trim() ? { negativePrompt: negPrompt.trim() } : {}),
           ...(hasStructureRef ? { structureReference: aiProfile.referenceImage, structureStrength } : {}),
-          ...(styleRefImage   ? { styleReference: styleRefImage } : {}),
-          ...(!usingRefs && selectedLoraChars.length  > 0 ? { loraCharacters: selectedLoraChars  } : {}),
-          ...(!usingRefs && selectedLoraStyles.length > 0 ? { loraStyles:     selectedLoraStyles } : {}),
+          ...(styleRefImage   ? { styleReference: styleRefImage, adherence, hdr } : {}),
+          // Only send LoRAs when not blocked — max 1 character and 1 style
+          ...(!lorasBlocked && selectedLoraChars.length  > 0 ? { loraCharacters: [selectedLoraChars[0]]  } : {}),
+          ...(!lorasBlocked && selectedLoraStyles.length > 0 ? { loraStyles:     [selectedLoraStyles[0]] } : {}),
         };
 
         const r = await fetch('/api/image/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
@@ -422,7 +455,10 @@ const ImageGeneratorScreen: React.FC = () => {
   const allLoras = [...(loras.default || []), ...(loras.customs || [])];
   const characterLoras = allLoras.filter((l: any) => l.type === 'character');
   const styleLoras     = allLoras.filter((l: any) => l.type === 'style');
-  const usingRefs = (useReference && hasRef) && !!styleRefImage;
+  // Render-time LoRA block check (mirrors the logic in handleGenerate)
+  const renderUsingRefs = (useReference && hasRef) || !!styleRefImage;
+  const renderSelectedModel = MODELS.find(m => m.value === model);
+  const renderLorasBlocked = renderUsingRefs || !(renderSelectedModel?.loraOk ?? true);
   const aspectRatios = engine === 'klein' ? ASPECT_RATIOS_KLEIN : ASPECT_RATIOS_MYSTIC;
 
   const downloadImage = (url: string, i: number) => {
@@ -556,8 +592,8 @@ const ImageGeneratorScreen: React.FC = () => {
                 {aiProfile.appearance.slice(0, 100)}{aiProfile.appearance.length > 100 ? '…' : ''}
               </p>
             )}
-            {usingRefs && selectedLoraChars.length + selectedLoraStyles.length > 0 && (
-              <p className="text-[10px] text-amber-500">⚠ LoRAs are ignored when both reference images are active.</p>
+            {renderLorasBlocked && (selectedLoraChars.length + selectedLoraStyles.length > 0) && (
+              <p className="text-[10px] text-amber-500">⚠ LoRAs are disabled (any reference image or selected model blocks LoRA support).</p>
             )}
           </div>
           )}
@@ -653,11 +689,14 @@ const ImageGeneratorScreen: React.FC = () => {
           {/* Mystic-only: Style model */}
           {engine === 'mystic' && (
             <div>
-              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Style</label>
+              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Model</label>
               <select value={model} onChange={e => setModel(e.target.value)}
                 className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-                {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}{m.loraOk ? '' : ' ✕ LoRA'}</option>)}
               </select>
+              {!renderSelectedModel?.loraOk && (
+                <p className="text-[10px] text-amber-500 mt-0.5">This model ignores LoRAs. Use Realism or Zen if you want LoRA support.</p>
+              )}
             </div>
           )}
 
@@ -719,16 +758,41 @@ const ImageGeneratorScreen: React.FC = () => {
                       className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
                   </div>
                   <div>
-                    <Slider label="Adherence" value={adherence} min={0} max={100} onChange={setAdherence} />
-                    <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = sticks closer to your prompt. <strong>Lower</strong> = more creative. Default 50.</p>
-                  </div>
-                  <div>
-                    <Slider label="HDR" value={hdr} min={0} max={100} onChange={setHdr} />
-                    <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = more vivid lighting. <strong>Lower</strong> = softer tones. Default 50.</p>
+                    <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Render Engine</label>
+                    <select value={mysticEngine} onChange={e => setMysticEngine(e.target.value)}
+                      className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm">
+                      {MYSTIC_ENGINES.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
+                    </select>
                   </div>
                   <div>
                     <Slider label="Creative Detailing" value={creativeDetailing} min={0} max={100} onChange={setCreativeDetailing} />
-                    <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = sharper detail. <strong>Lower</strong> = more natural look. Default 33.</p>
+                    <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = sharper detail. <strong>Lower</strong> = more natural. Default 33.</p>
+                  </div>
+                  {/* adherence and hdr only take effect when style_reference is provided */}
+                  {styleRefImage && (
+                    <>
+                      <div>
+                        <Slider label="Adherence (style ref only)" value={adherence} min={0} max={100} onChange={setAdherence} />
+                        <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = follows prompt more, less style transfer. <strong>Lower</strong> = closer to style reference. Default 50.</p>
+                      </div>
+                      <div>
+                        <Slider label="HDR (style ref only)" value={hdr} min={0} max={100} onChange={setHdr} />
+                        <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = more detail, more AI look. <strong>Lower</strong> = more natural, artistic. Default 50.</p>
+                      </div>
+                    </>
+                  )}
+                  {!styleRefImage && (
+                    <p className="text-[10px] text-indigo-400">Adherence and HDR sliders only appear when a style reference image is active.</p>
+                  )}
+                  <div className="flex items-center justify-between py-1">
+                    <div>
+                      <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Fixed Generation</p>
+                      <p className="text-[10px] text-indigo-400">Same settings always produce the same image. Good for fine-tuning prompts.</p>
+                    </div>
+                    <button onClick={() => setFixedGeneration(!fixedGeneration)}
+                      className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${fixedGeneration ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
+                      <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${fixedGeneration ? 'translate-x-2' : '-translate-x-2'}`} />
+                    </button>
                   </div>
                 </div>
               )}
@@ -742,8 +806,8 @@ const ImageGeneratorScreen: React.FC = () => {
           </button>
 
           {/* LoRA section — Mystic only, below generate button */}
-          {engine === 'mystic' && freepikApiKey && (lorasLoaded ? allLoras.length > 0 : true) && (
-            <div className={`p-3 rounded-xl border space-y-3 transition-opacity ${usingRefs ? 'opacity-50' : ''} bg-indigo-50 dark:bg-indigo-900/30 border-indigo-100 dark:border-indigo-800`}>
+          {engine === 'mystic' && freepikApiKey && (lorasLoaded ? allLoras.length > 0 : true) && ( // renderLorasBlocked controls opacity inside
+            <div className={`p-3 rounded-xl border space-y-3 transition-opacity ${renderLorasBlocked ? 'opacity-50' : ''} bg-indigo-50 dark:bg-indigo-900/30 border-indigo-100 dark:border-indigo-800`}>
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Your LoRAs</p>
                 <button onClick={() => { setLorasLoaded(false); setTimeout(loadLoras, 100); }}
@@ -751,8 +815,10 @@ const ImageGeneratorScreen: React.FC = () => {
                   <RefreshCw className="w-3 h-3" /> Refresh
                 </button>
               </div>
-              {usingRefs && (
-                <p className="text-[10px] text-amber-500 dark:text-amber-400">LoRAs are disabled when both a character reference AND a style reference are active at the same time (Freepik limitation). Turn off one of the image slots to use a LoRA alongside the other.</p>
+              {renderLorasBlocked && (
+                <p className="text-[10px] text-amber-500 dark:text-amber-400">
+                  {renderUsingRefs ? "LoRAs are disabled when any reference image is active." : "This model does not support LoRAs. Use Realism or Zen instead."}
+                </p>
               )}
               {!lorasLoaded && <p className="text-xs text-indigo-400 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Loading…</p>}
               {lorasLoaded && allLoras.length === 0 && (
@@ -767,12 +833,12 @@ const ImageGeneratorScreen: React.FC = () => {
                       const isTraining = ['training','queued','pending'].includes(l.training?.status);
                       return (
                         <div key={l.id}
-                          onClick={() => !usingRefs && !isTraining && setSelectedLoraChars(prev =>
+                          onClick={() => !renderLorasBlocked && !isTraining && setSelectedLoraChars(prev =>
                             sel ? prev.filter(x => x.id !== String(l.id)) : [...prev, { id: String(l.id), name: l.name, strength: 100 }]
                           )}
                           className={`flex items-center gap-2 p-2 rounded-lg border transition-colors
-                            ${sel && !usingRefs ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700'}
-                            ${!usingRefs && !isTraining ? 'cursor-pointer hover:border-indigo-400' : 'cursor-default'}`}>
+                            ${sel && !renderLorasBlocked ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700'}
+                            ${!renderLorasBlocked && !isTraining ? 'cursor-pointer hover:border-indigo-400' : 'cursor-default'}`}>
                           {l.preview && <img src={l.preview} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />}
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium text-indigo-900 dark:text-indigo-100 truncate">{l.name}</p>
@@ -780,7 +846,7 @@ const ImageGeneratorScreen: React.FC = () => {
                               {isTraining ? '⏳ Still training…' : l.training?.status || 'ready'}
                             </p>
                           </div>
-                          {sel && !usingRefs && <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
+                          {sel && !renderLorasBlocked && <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
                         </div>
                       );
                     })}
@@ -795,18 +861,18 @@ const ImageGeneratorScreen: React.FC = () => {
                       const sel = selectedLoraStyles.find(x => x.name === l.name);
                       return (
                         <div key={l.id || l.name}
-                          onClick={() => !usingRefs && setSelectedLoraStyles(prev =>
+                          onClick={() => !renderLorasBlocked && setSelectedLoraStyles(prev =>
                             sel ? prev.filter(x => x.name !== l.name) : [...prev, { name: l.name, strength: 100 }]
                           )}
                           className={`flex items-center gap-2 p-2 rounded-lg border transition-colors
-                            ${sel && !usingRefs ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700'}
-                            ${!usingRefs ? 'cursor-pointer hover:border-indigo-400' : 'cursor-default'}`}>
+                            ${sel && !renderLorasBlocked ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700'}
+                            ${!renderLorasBlocked ? 'cursor-pointer hover:border-indigo-400' : 'cursor-default'}`}>
                           {l.preview && <img src={l.preview} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />}
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium text-indigo-900 dark:text-indigo-100 truncate">{l.name}</p>
                             {l.description && <p className="text-[10px] text-indigo-400 truncate">{l.description}</p>}
                           </div>
-                          {sel && !usingRefs && <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
+                          {sel && !renderLorasBlocked && <CheckCircle className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
                         </div>
                       );
                     })}
