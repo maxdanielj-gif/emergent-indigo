@@ -13,6 +13,7 @@ import ImageGeneratorScreen from './screens/ImageGeneratorScreen';
 import JournalScreen from './screens/JournalScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import ErrorBoundary from './components/ErrorBoundary';
+import MobileDebugger from './components/MobileDebugger';
 
 const App: React.FC = () => {
   return (
@@ -35,6 +36,7 @@ const App: React.FC = () => {
                 <Route path="*" element={<Navigate to="/chat" replace />} />
               </Routes>
             </Layout>
+            <MobileDebugger />
           </Router>
         </ChatProvider>
       </AppProvider>
