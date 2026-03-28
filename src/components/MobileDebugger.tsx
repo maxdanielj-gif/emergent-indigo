@@ -147,7 +147,7 @@ const MobileDebugger: React.FC = () => {
       if (dotMatch) {
         prefix = dotMatch[2];
         try {
-          const obj = eval(dotMatch[1]); // intentional REPL
+          const obj = (0, eval)(dotMatch[1]); // indirect eval = safe to minify
           if (obj != null) {
             const props: string[] = [];
             let o = obj;
@@ -206,7 +206,7 @@ const MobileDebugger: React.FC = () => {
       appendEntry(['> ' + code], 'system');
       try { new Function(code); } catch (err: any) { appendEntry(['Syntax: ' + err.message], 'error'); return; }
       try {
-        const result = eval(code); // intentional REPL
+        const result = (0, eval)(code); // indirect eval = safe to minify
         if (result !== undefined) appendEntry([result], 'log');
       } catch (err: any) { appendEntry([err], 'error'); }
       input.value = '';
