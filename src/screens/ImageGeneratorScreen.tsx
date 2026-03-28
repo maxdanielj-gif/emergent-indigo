@@ -138,10 +138,10 @@ const ImageGeneratorScreen: React.FC = () => {
   const [selectedLoraStyles,setSelectedLoraStyles]= useState<{name:string;strength:number}[]>([]);
 
   // ── Klein-specific state ──────────────────────────────────────────────────
-  // 4 generic image slots — null means empty
   const [kleinImages,       setKleinImages]       = useState<(string|null)[]>([null, null, null, null]);
-  const [kleinSeed,         setKleinSeed]         = useState('');   // optional integer string
-  const [kleinSafety,       setKleinSafety]       = useState(2);    // 0–5
+  const [kleinSeed,         setKleinSeed]         = useState('');
+  const [kleinSafety,       setKleinSafety]       = useState(2);
+  const [kleinOutputFormat, setKleinOutputFormat] = useState<'png'|'jpeg'>('jpeg');
 
   // ── LoRA state (shared) ───────────────────────────────────────────────────
   const [loras,             setLoras]             = useState<any>({ default: [], customs: [] });
@@ -283,14 +283,26 @@ const ImageGeneratorScreen: React.FC = () => {
     try {
       // ── Flux 2 Klein ──────────────────────────────────────────────────────
       if (engine === 'klein') {
-        const inputImages = kleinImages.filter(Boolean) as string[];
+        // Always include appearance description in prompt for Klein
+        // (no separate structure_reference param like Mystic)
+        let kleinPrompt = prompt.trim();
+        if (appearance) kleinPrompt = `${appearance}. ${kleinPrompt}`;
+        promptRef.current = kleinPrompt;
+
+        // Resolve actual images to send — slot 0 auto-fills with persona photo
+        const resolvedImages = kleinImages.map((img, i) => {
+          if (img) return img;
+          if (i === 0 && hasRef && aiProfile.referenceImage) return aiProfile.referenceImage;
+          return null;
+        }).filter(Boolean) as string[];
 
         const body: any = {
-          prompt: finalPrompt,
+          prompt: kleinPrompt,
           aspectRatio,
           resolution,
-          inputImages,
+          inputImages: resolvedImages,
           safetyTolerance: kleinSafety,
+          outputFormat: kleinOutputFormat,
           apiKey: freepikApiKey,
         };
         if (kleinSeed.trim()) {
@@ -303,7 +315,7 @@ const ImageGeneratorScreen: React.FC = () => {
         const result = await r.json();
         const taskId = result.taskId;
         if (!taskId) throw new Error(`No task ID returned. Response: ${JSON.stringify(result)}`);
-        console.log(`[ImageGen Klein] Task created: ${taskId}`);
+        console.log(`[ImageGen Klein] Task created: ${taskId}, refs: ${resolvedImages.length}, prompt: "${kleinPrompt.slice(0,80)}"`);
         setJobStatus('waiting'); setStatusMsg('Generating with Flux 2 Klein…');
         startPolling(taskId, '/api/image/status-klein');
 
@@ -645,32 +657,43 @@ const ImageGeneratorScreen: React.FC = () => {
             </div>
           )}
 
-          {/* Klein-only: Seed + Safety Tolerance */}
+          {/* Klein-only: Seed + Safety Tolerance + Output Format */}
           {engine === 'klein' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">
-                  Seed <span className="font-normal text-indigo-400">(optional)</span>
-                </label>
-                <input type="number" value={kleinSeed} onChange={e => setKleinSeed(e.target.value)}
-                  placeholder="Random"
-                  min={0} max={4294967295}
-                  className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs focus:ring-2 focus:ring-indigo-500 outline-none" />
-                <p className="text-[10px] text-indigo-400 mt-0.5">Same seed = same image. Useful for variations.</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                    Seed <span className="font-normal text-indigo-400">(optional)</span>
+                  </label>
+                  <input type="number" value={kleinSeed} onChange={e => setKleinSeed(e.target.value)}
+                    placeholder="Random"
+                    min={0} max={4294967295}
+                    className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  <p className="text-[10px] text-indigo-400 mt-0.5">Same seed = same image. Useful for variations.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Safety Tolerance</label>
+                  <select value={kleinSafety} onChange={e => setKleinSafety(Number(e.target.value))}
+                    className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                    <option value={0}>0 — Strictest</option>
+                    <option value={1}>1</option>
+                    <option value={2}>2 — Default</option>
+                    <option value={3}>3</option>
+                    <option value={4}>4</option>
+                    <option value={5}>5 — Most lenient</option>
+                  </select>
+                </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">
-                  Safety Tolerance
-                </label>
-                <select value={kleinSafety} onChange={e => setKleinSafety(Number(e.target.value))}
-                  className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-                  <option value={0}>0 — Strictest</option>
-                  <option value={1}>1</option>
-                  <option value={2}>2 — Default</option>
-                  <option value={3}>3</option>
-                  <option value={4}>4</option>
-                  <option value={5}>5 — Most lenient</option>
-                </select>
+                <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Output Format</label>
+                <div className="flex gap-2">
+                  {(['jpeg','png'] as const).map(fmt => (
+                    <button key={fmt} onClick={() => setKleinOutputFormat(fmt)}
+                      className={`flex-1 py-2 rounded-xl border text-xs font-medium transition-colors ${kleinOutputFormat === fmt ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60 text-indigo-700 dark:text-indigo-200' : 'border-indigo-200 dark:border-indigo-700 text-indigo-500 hover:border-indigo-400'}`}>
+                      {fmt.toUpperCase()} {fmt === 'jpeg' ? '— smaller file' : '— lossless'}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
