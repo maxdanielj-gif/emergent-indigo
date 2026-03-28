@@ -160,16 +160,38 @@ const ImageGeneratorScreen: React.FC = () => {
   useEffect(() => { loadLoras(); }, [loadLoras]);
 
   // ── Polling helper ────────────────────────────────────────────────────────
+  const freepikKeyRef = useRef(freepikApiKey);
+  useEffect(() => { freepikKeyRef.current = freepikApiKey; }, [freepikApiKey]);
+
   const startPolling = (taskId: string, statusEndpoint: string) => {
     if (pollRef.current)    clearInterval(pollRef.current);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
+    let consecutiveErrors = 0;
+
     pollRef.current = setInterval(async () => {
       try {
-        const r = await fetch(`${statusEndpoint}/${taskId}?api_key=${encodeURIComponent(freepikApiKey || '')}`);
-        if (!r.ok) return;
+        const key = freepikKeyRef.current || '';
+        const r = await fetch(`${statusEndpoint}/${taskId}?api_key=${encodeURIComponent(key)}`);
+
+        if (!r.ok) {
+          consecutiveErrors++;
+          console.warn(`Poll error ${r.status} (${consecutiveErrors} in a row)`);
+          // Stop after 5 consecutive HTTP errors — something is broken
+          if (consecutiveErrors >= 5) {
+            clearInterval(pollRef.current!); clearTimeout(timeoutRef.current!); pollRef.current = null;
+            let errMsg = `Polling failed repeatedly (HTTP ${r.status})`;
+            try { const e = await r.json(); errMsg = e.error || errMsg; } catch {}
+            setJobStatus('failed'); setStatusMsg(errMsg);
+            addToast({ title: 'Generation failed', message: errMsg, type: 'error' });
+          }
+          return;
+        }
+
+        consecutiveErrors = 0;
         const data = await r.json();
         const status = String(data.status || '').toUpperCase();
+        console.log(`Poll ${taskId}: status=${status}`);
 
         if (status === 'COMPLETED') {
           clearInterval(pollRef.current!); clearTimeout(timeoutRef.current!); pollRef.current = null;
@@ -182,21 +204,29 @@ const ImageGeneratorScreen: React.FC = () => {
             }));
             addToast({ title: 'Done!', message: 'Saved to gallery.', type: 'success' });
           } else {
-            setJobStatus('failed'); setStatusMsg('Task completed but no images returned.');
+            setJobStatus('failed'); setStatusMsg('Task completed but no images returned. The content may have been filtered.');
           }
         } else if (['FAILED','ERROR','CANCELLED'].includes(status)) {
           clearInterval(pollRef.current!); clearTimeout(timeoutRef.current!); pollRef.current = null;
-          const msg = data.error || data.message || 'Generation failed.';
+          const msg = data.error || data.message || `Generation ${status.toLowerCase()}.`;
           setJobStatus('failed'); setStatusMsg(msg);
-          addToast({ title: 'Failed', message: msg, type: 'error' });
+          addToast({ title: 'Generation failed', message: msg, type: 'error' });
         }
-      } catch {}
-    }, 3000);
+        // IN_PROGRESS / CREATED — keep polling
+      } catch (e: any) {
+        consecutiveErrors++;
+        console.warn('Poll exception:', e.message, `(${consecutiveErrors} in a row)`);
+        if (consecutiveErrors >= 5) {
+          clearInterval(pollRef.current!); clearTimeout(timeoutRef.current!); pollRef.current = null;
+          setJobStatus('failed'); setStatusMsg('Lost connection while waiting for generation.');
+        }
+      }
+    }, 4000); // 4s interval — Freepik jobs take 10–90s, no need to hammer every 3s
 
     timeoutRef.current = setTimeout(() => {
       if (pollRef.current) {
         clearInterval(pollRef.current); pollRef.current = null;
-        setJobStatus('failed'); setStatusMsg('Timed out after 3 minutes.');
+        setJobStatus('failed'); setStatusMsg('Timed out after 3 minutes. Check freepik.com/developers/dashboard for task status.');
       }
     }, 3 * 60 * 1000);
   };
@@ -453,6 +483,77 @@ const ImageGeneratorScreen: React.FC = () => {
             )}
           </div>
 
+          {/* Prompt */}
+          <div>
+            <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Prompt</label>
+            <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={3}
+              placeholder={`Describe the scene — e.g. "${aiProfile.name} sitting in a cozy café, warm lighting, photorealistic"`}
+              className="w-full p-3 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none" />
+          </div>
+
+          {/* Core controls */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Ratio</label>
+              <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}
+                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                {ASPECT_RATIOS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Resolution</label>
+              <select value={resolution} onChange={e => setResolution(e.target.value)}
+                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                {RESOLUTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Style</label>
+              <select value={model} onChange={e => setModel(e.target.value)}
+                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Advanced */}
+          <div>
+            <button onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 py-1">
+              {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              Advanced Settings
+            </button>
+            {showAdvanced && (
+              <div className="mt-3 space-y-4 p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                <div>
+                  <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Negative Prompt</label>
+                  <input type="text" value={negPrompt} onChange={e => setNegPrompt(e.target.value)}
+                    placeholder="What to avoid — e.g. blurry, distorted face, extra limbs"
+                    className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+                </div>
+                <div>
+                  <Slider label="Adherence" value={adherence} min={0} max={100} onChange={setAdherence} />
+                  <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = sticks closer to your prompt. <strong>Lower</strong> = more creative interpretation. Default 50.</p>
+                </div>
+                <div>
+                  <Slider label="HDR" value={hdr} min={0} max={100} onChange={setHdr} />
+                  <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = more vivid, dramatic lighting and contrast. <strong>Lower</strong> = softer, more even tones. Default 50.</p>
+                </div>
+                <div>
+                  <Slider label="Creative Detailing" value={creativeDetailing} min={0} max={100} onChange={setCreativeDetailing} />
+                  <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = sharper detail, but can look more "AI-generated". <strong>Lower</strong> = more natural look. Default 33.</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Generate button */}
+          <button onClick={handleGenerate} disabled={isGenerating || !prompt.trim() || !freepikApiKey}
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {isGenerating ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg || 'Generating…'}</> : <><Wand2 className="w-4 h-4" />Generate Image</>}
+          </button>
+
+          {/* LoRA section — below generate button */}
           {/* LoRA section — always visible, greyed when refs active */}
           {freepikApiKey && (lorasLoaded ? allLoras.length > 0 : true) && (
             <div className={`p-3 rounded-xl border space-y-3 transition-opacity ${usingRefs ? 'opacity-50' : ''} bg-indigo-50 dark:bg-indigo-900/30 border-indigo-100 dark:border-indigo-800`}>
@@ -527,76 +628,6 @@ const ImageGeneratorScreen: React.FC = () => {
               )}
             </div>
           )}
-
-          {/* Prompt */}
-          <div>
-            <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Prompt</label>
-            <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={3}
-              placeholder={`Describe the scene — e.g. "${aiProfile.name} sitting in a cozy café, warm lighting, photorealistic"`}
-              className="w-full p-3 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none" />
-          </div>
-
-          {/* Core controls */}
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Ratio</label>
-              <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}
-                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-                {ASPECT_RATIOS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Resolution</label>
-              <select value={resolution} onChange={e => setResolution(e.target.value)}
-                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-                {RESOLUTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Style</label>
-              <select value={model} onChange={e => setModel(e.target.value)}
-                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-                {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* Advanced */}
-          <div>
-            <button onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 py-1">
-              {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              Advanced Settings
-            </button>
-            {showAdvanced && (
-              <div className="mt-3 space-y-4 p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
-                <div>
-                  <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Negative Prompt</label>
-                  <input type="text" value={negPrompt} onChange={e => setNegPrompt(e.target.value)}
-                    placeholder="What to avoid — e.g. blurry, distorted face, extra limbs"
-                    className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
-                </div>
-                <div>
-                  <Slider label="Adherence" value={adherence} min={0} max={100} onChange={setAdherence} />
-                  <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = sticks closer to your prompt. <strong>Lower</strong> = more creative interpretation. Default 50.</p>
-                </div>
-                <div>
-                  <Slider label="HDR" value={hdr} min={0} max={100} onChange={setHdr} />
-                  <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = more vivid, dramatic lighting and contrast. <strong>Lower</strong> = softer, more even tones. Default 50.</p>
-                </div>
-                <div>
-                  <Slider label="Creative Detailing" value={creativeDetailing} min={0} max={100} onChange={setCreativeDetailing} />
-                  <p className="text-[10px] text-indigo-400 -mt-1"><strong>Higher</strong> = sharper detail, but can look more "AI-generated". <strong>Lower</strong> = more natural look. Default 33.</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Generate button */}
-          <button onClick={handleGenerate} disabled={isGenerating || !prompt.trim() || !freepikApiKey}
-            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-            {isGenerating ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg || 'Generating…'}</> : <><Wand2 className="w-4 h-4" />Generate Image</>}
-          </button>
         </div>
       )}
 
