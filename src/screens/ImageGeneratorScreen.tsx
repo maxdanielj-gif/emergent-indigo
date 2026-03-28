@@ -135,7 +135,6 @@ const ImageGeneratorScreen: React.FC = () => {
   const [jobStatus,   setJobStatus]   = useState<JobStatus>('idle');
   const [statusMsg,   setStatusMsg]   = useState('');
   const [resultImages,setResultImages]= useState<string[]>([]);
-  const [debugLog,    setDebugLog]    = useState<string[]>([]);
 
   const pollRef    = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -169,10 +168,7 @@ const ImageGeneratorScreen: React.FC = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
     let consecutiveErrors = 0;
-    const log = (msg: string) => {
-      const ts = new Date().toLocaleTimeString();
-      setDebugLog(prev => [`[${ts}] ${msg}`, ...prev].slice(0, 20));
-    };
+    const log = (msg: string) => console.log(`[ImageGen] ${msg}`);
 
     log(`Polling started — taskId: ${taskId}`);
 
@@ -248,7 +244,7 @@ const ImageGeneratorScreen: React.FC = () => {
     if (!prompt.trim()) { addToast({ title: 'Prompt required', message: 'Describe the image you want.', type: 'warning' }); return; }
     if (!freepikApiKey) { addToast({ title: 'No Freepik key', message: 'Add your key in Settings.', type: 'warning' }); return; }
 
-    setJobStatus('creating'); setStatusMsg('Creating task…'); setResultImages([]); setDebugLog([]);
+    setJobStatus('creating'); setStatusMsg('Creating task…'); setResultImages([]);
 
     const hasStructureRef = useReference && hasRef;
     const appearance = aiProfile.appearance?.trim();
@@ -289,7 +285,7 @@ const ImageGeneratorScreen: React.FC = () => {
       const result = await r.json();
       const taskId = result.taskId;
       if (!taskId) throw new Error(`No task ID returned. Response: ${JSON.stringify(result)}`);
-      setDebugLog([`[${new Date().toLocaleTimeString()}] Task created: ${taskId}`]);
+      console.log(`[ImageGen] Task created: ${taskId}`);
       setJobStatus('waiting'); setStatusMsg(`Generating at ${RESOLUTIONS.find(x=>x.value===resolution)?.label||resolution}…`);
       startPolling(taskId, '/api/image/status');
     } catch (e: any) {
@@ -556,17 +552,6 @@ const ImageGeneratorScreen: React.FC = () => {
             {isGenerating ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg || 'Generating…'}</> : <><Wand2 className="w-4 h-4" />Generate Image</>}
           </button>
 
-          {/* Debug log — visible while generating so errors are readable on Android */}
-          {(isGenerating || debugLog.length > 0) && (
-            <div className="p-3 bg-gray-900 rounded-xl border border-gray-700">
-              <p className="text-[10px] font-bold text-gray-400 mb-1 uppercase tracking-wider">Generation Log</p>
-              <div className="space-y-0.5">
-                {debugLog.map((line, i) => (
-                  <p key={i} className="text-[10px] font-mono text-green-400 break-all">{line}</p>
-                ))}
-                {isGenerating && debugLog.length === 0 && (
-                  <p className="text-[10px] font-mono text-yellow-400">Waiting for task ID…</p>
-                )}
               </div>
             </div>
           )}
