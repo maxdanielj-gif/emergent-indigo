@@ -938,7 +938,7 @@ app.get("/api/image/status/:taskId", async (req, res) => {
 // Completely different API from Mystic — sends reference images as input_image
 // through input_image_4, which the model uses for subject/character consistency.
 app.post("/api/image/generate-klein", express.json({ limit: "20mb" }), async (req, res) => {
-  const { prompt, aspectRatio, resolution, inputImages, seed, safetyTolerance, apiKey: userApiKey } = req.body;
+  const { prompt, aspectRatio, resolution, inputImages, seed, safetyTolerance, outputFormat, apiKey: userApiKey } = req.body;
   if (!prompt) return res.status(400).json({ error: "Prompt is required." });
   const apiKey = userApiKey || process.env.FREEPIK_API_KEY;
   if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
@@ -952,6 +952,7 @@ app.post("/api/image/generate-klein", express.json({ limit: "20mb" }), async (re
     };
 
     if (seed !== undefined && seed !== null) body.seed = seed;
+    if (outputFormat === 'png' || outputFormat === 'jpeg') body.output_format = outputFormat;
 
     // Up to 4 reference images as input_image, input_image_2, etc.
     const keys = ["input_image", "input_image_2", "input_image_3", "input_image_4"];
@@ -962,7 +963,7 @@ app.post("/api/image/generate-klein", express.json({ limit: "20mb" }), async (re
       });
     }
 
-    console.log(`Flux 2 Klein — ${body.resolution}, ratio:${body.aspect_ratio}, refs:${inputImages?.length || 0}, seed:${seed ?? 'random'}, prompt: "${body.prompt.slice(0, 80)}"`);
+    console.log(`Flux 2 Klein — ${body.resolution}, ratio:${body.aspect_ratio}, refs:${inputImages?.length || 0}, format:${body.output_format || 'default'}, seed:${seed ?? 'random'}, prompt: "${body.prompt.slice(0, 100)}"`);
 
     const r = await fetch("https://api.freepik.com/v1/ai/text-to-image/flux-2-klein", {
       method: "POST",
