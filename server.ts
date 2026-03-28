@@ -934,7 +934,84 @@ app.get("/api/image/status/:taskId", async (req, res) => {
   }
 });
 
-// ── Freepik: LoRAs ────────────────────────────────────────────────────────────
+// ── Freepik: Flux 2 Klein ─────────────────────────────────────────────────────
+// Completely different API from Mystic — sends reference images as input_image
+// through input_image_4, which the model uses for subject/character consistency.
+app.post("/api/image/generate-klein", express.json({ limit: "20mb" }), async (req, res) => {
+  const { prompt, aspectRatio, resolution, inputImages, apiKey: userApiKey } = req.body;
+  if (!prompt) return res.status(400).json({ error: "Prompt is required." });
+  const apiKey = userApiKey || process.env.FREEPIK_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
+
+  try {
+    const body: any = {
+      prompt: prompt.trim(),
+      aspect_ratio: aspectRatio || "square_1_1",
+      resolution:   resolution  || "1k",
+      safety_tolerance: 2,
+    };
+
+    // Up to 4 reference images as input_image, input_image_2, etc.
+    const keys = ["input_image", "input_image_2", "input_image_3", "input_image_4"];
+    if (Array.isArray(inputImages)) {
+      inputImages.slice(0, 4).forEach((img: string, i: number) => {
+        const b64 = img.includes(",") ? img.split(",")[1] : img;
+        body[keys[i]] = b64;
+      });
+    }
+
+    console.log(`Flux 2 Klein — ${body.resolution}, ratio:${body.aspect_ratio}, refs:${inputImages?.length || 0}, prompt: "${body.prompt.slice(0, 80)}"`);
+
+    const r = await fetch("https://api.freepik.com/v1/ai/text-to-image/flux-2-klein", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-freepik-api-key": apiKey },
+      body: JSON.stringify(body),
+    });
+
+    if (!r.ok) {
+      const errText = await r.text();
+      console.error(`Flux 2 Klein error ${r.status}:`, errText);
+      if (r.status === 401) return res.status(401).json({ error: "Invalid Freepik API key." });
+      return res.status(r.status).json({ error: `Generation failed: ${errText}` });
+    }
+
+    const data = await r.json();
+    const taskId = data?.data?.task_id;
+    console.log(`Flux 2 Klein task created: ${taskId}, status: ${data?.data?.status}`);
+    res.json({ taskId, status: data?.data?.status });
+  } catch (e: any) {
+    console.error("Flux 2 Klein error:", e);
+    res.status(500).json({ error: e.message || "Failed to start generation." });
+  }
+});
+
+// Poll Flux 2 Klein task status
+app.get("/api/image/status-klein/:taskId", async (req, res) => {
+  const apiKey = (req.query.api_key as string) || process.env.FREEPIK_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "Freepik API key not configured." });
+  try {
+    const r = await fetch(`https://api.freepik.com/v1/ai/text-to-image/flux-2-klein/${req.params.taskId}`, {
+      headers: { "x-freepik-api-key": apiKey },
+    });
+    if (!r.ok) {
+      const errText = await r.text();
+      console.error(`Klein status error ${r.status}:`, errText);
+      return res.status(r.status).json({ error: errText });
+    }
+    const data = await r.json();
+    const taskStatus = data?.data?.status;
+    console.log(`Klein task ${req.params.taskId}: ${taskStatus}, generated: ${data?.data?.generated?.length || 0}`);
+    if (taskStatus === "COMPLETED" || taskStatus === "FAILED") {
+      console.log(`Klein full response:`, JSON.stringify(data).slice(0, 500));
+    }
+    const generated: string[] = data?.data?.generated || [];
+    res.json({ ...data?.data, _imageUrls: generated });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 // List all available LoRAs (Freepik defaults + user-trained)
 app.get("/api/image/loras", async (req, res) => {
   const apiKey = (req.query.api_key as string) || process.env.FREEPIK_API_KEY;
