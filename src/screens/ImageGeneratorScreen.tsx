@@ -8,17 +8,37 @@ import {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const ASPECT_RATIOS = [
+// Engine choices
+const ENGINES = [
+  { label: 'Mystic — Ultra-realistic, LoRA support', value: 'mystic' },
+  { label: 'Flux 2 Klein — Fast, best character consistency', value: 'klein' },
+] as const;
+type Engine = 'mystic' | 'klein';
+
+// Mystic aspect ratios
+const ASPECT_RATIOS_MYSTIC = [
   { label: 'Square (1:1)',      value: 'square_1_1'      },
   { label: 'Portrait (3:4)',    value: 'traditional_3_4' },
   { label: 'Landscape (4:3)',   value: 'classic_4_3'     },
   { label: 'Tall (9:16)',       value: 'social_story_9_16'},
   { label: 'Wide (16:9)',       value: 'widescreen_16_9' },
 ];
+// Klein supports more ratios
+const ASPECT_RATIOS_KLEIN = [
+  { label: 'Square (1:1)',      value: 'square_1_1'      },
+  { label: 'Portrait (2:3)',    value: 'portrait_2_3'    },
+  { label: 'Portrait (3:4)',    value: 'traditional_3_4' },
+  { label: 'Landscape (4:3)',   value: 'classic_4_3'     },
+  { label: 'Landscape (3:2)',   value: 'standard_3_2'    },
+  { label: 'Tall (9:16)',       value: 'social_story_9_16'},
+  { label: 'Wide (16:9)',       value: 'widescreen_16_9' },
+  { label: 'Social (4:5)',      value: 'social_post_4_5' },
+];
+
 const RESOLUTIONS = [
-  { label: '1K — Fast (10–20s)',     value: '1k' },
-  { label: '2K — Balanced (20–40s)', value: '2k' },
-  { label: '4K — High detail (40–90s)', value: '4k' },
+  { label: '1K — Fast',     value: '1k' },
+  { label: '2K — High res', value: '2k' },
+  { label: '4K — Mystic only', value: '4k' },
 ];
 const MODELS = [
   { label: 'Realism (photorealistic)', value: 'realism' },
@@ -101,6 +121,7 @@ const ImageGeneratorScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('Generate');
 
   // ── Generate tab state ────────────────────────────────────────────────────
+  const [engine,            setEngine]            = useState<Engine>('mystic');
   const [useReference,      setUseReference]      = useState(hasRef);
   const [styleRefImage,     setStyleRefImage]      = useState<string | null>(null);
   const [prompt,            setPrompt]            = useState('');
@@ -247,44 +268,67 @@ const ImageGeneratorScreen: React.FC = () => {
     setJobStatus('creating'); setStatusMsg('Creating task…'); setResultImages([]);
 
     const hasStructureRef = useReference && hasRef;
-    // Declare usingRefs here — used below in LoRA injection AND in the request body
     const usingRefs = hasStructureRef && !!styleRefImage;
     const appearance = aiProfile.appearance?.trim();
     let finalPrompt = prompt.trim();
     if (hasStructureRef && appearance) finalPrompt = `${appearance}. ${finalPrompt}`;
-    // Build enriched prompt — inject @charactername for LoRA characters if selected
-    let enrichedPrompt = finalPrompt;
-
-    if (!usingRefs && selectedLoraChars.length > 0) {
-      selectedLoraChars.forEach((c: any) => {
-        const tag = `@${c.id}`;
-        if (!enrichedPrompt.includes(tag)) {
-          enrichedPrompt = `${tag} ${enrichedPrompt}`;
-        }
-      });
-    }
-
-    promptRef.current = enrichedPrompt;
+    promptRef.current = finalPrompt;
 
     try {
-      const body: any = {
-        prompt: enrichedPrompt, aspectRatio, resolution, model,
-        adherence, hdr, creativeDetailing, apiKey: freepikApiKey,
-        ...(negPrompt.trim() ? { negativePrompt: negPrompt.trim() } : {}),
-        ...(hasStructureRef ? { structureReference: aiProfile.referenceImage, structureStrength } : {}),
-        ...(styleRefImage   ? { styleReference: styleRefImage } : {}),
-        ...(!usingRefs && selectedLoraChars.length  > 0 ? { loraCharacters: selectedLoraChars  } : {}),
-        ...(!usingRefs && selectedLoraStyles.length > 0 ? { loraStyles:     selectedLoraStyles } : {}),
-      };
+      // ── Flux 2 Klein ──────────────────────────────────────────────────────
+      if (engine === 'klein') {
+        // Collect reference images (up to 4): persona ref first, then style ref
+        const inputImages: string[] = [];
+        if (hasStructureRef && aiProfile.referenceImage) inputImages.push(aiProfile.referenceImage);
+        if (styleRefImage) inputImages.push(styleRefImage);
 
-      const r = await fetch('/api/image/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Failed'); }
-      const result = await r.json();
-      const taskId = result.taskId;
-      if (!taskId) throw new Error(`No task ID returned. Response: ${JSON.stringify(result)}`);
-      console.log(`[ImageGen] Task created: ${taskId}`);
-      setJobStatus('waiting'); setStatusMsg(`Generating at ${RESOLUTIONS.find(x=>x.value===resolution)?.label||resolution}…`);
-      startPolling(taskId, '/api/image/status');
+        const body = {
+          prompt: finalPrompt,
+          aspectRatio: resolution === '4k' ? aspectRatio : aspectRatio, // Klein uses same ratio names
+          resolution: resolution === '4k' ? '2k' : resolution, // Klein max is 2k
+          inputImages,
+          apiKey: freepikApiKey,
+        };
+
+        const r = await fetch('/api/image/generate-klein', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+        if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Failed'); }
+        const result = await r.json();
+        const taskId = result.taskId;
+        if (!taskId) throw new Error(`No task ID returned. Response: ${JSON.stringify(result)}`);
+        console.log(`[ImageGen Klein] Task created: ${taskId}`);
+        setJobStatus('waiting'); setStatusMsg('Generating with Flux 2 Klein (fast)…');
+        startPolling(taskId, '/api/image/status-klein');
+
+      // ── Mystic ────────────────────────────────────────────────────────────
+      } else {
+        let enrichedPrompt = finalPrompt;
+        if (!usingRefs && selectedLoraChars.length > 0) {
+          selectedLoraChars.forEach((c: any) => {
+            const tag = `@${c.id}`;
+            if (!enrichedPrompt.includes(tag)) enrichedPrompt = `${tag} ${enrichedPrompt}`;
+          });
+        }
+        promptRef.current = enrichedPrompt;
+
+        const body: any = {
+          prompt: enrichedPrompt, aspectRatio, resolution, model,
+          adherence, hdr, creativeDetailing, apiKey: freepikApiKey,
+          ...(negPrompt.trim() ? { negativePrompt: negPrompt.trim() } : {}),
+          ...(hasStructureRef ? { structureReference: aiProfile.referenceImage, structureStrength } : {}),
+          ...(styleRefImage   ? { styleReference: styleRefImage } : {}),
+          ...(!usingRefs && selectedLoraChars.length  > 0 ? { loraCharacters: selectedLoraChars  } : {}),
+          ...(!usingRefs && selectedLoraStyles.length > 0 ? { loraStyles:     selectedLoraStyles } : {}),
+        };
+
+        const r = await fetch('/api/image/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+        if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Failed'); }
+        const result = await r.json();
+        const taskId = result.taskId;
+        if (!taskId) throw new Error(`No task ID returned. Response: ${JSON.stringify(result)}`);
+        console.log(`[ImageGen Mystic] Task created: ${taskId}`);
+        setJobStatus('waiting'); setStatusMsg(`Generating with Mystic at ${RESOLUTIONS.find(x=>x.value===resolution)?.label||resolution}…`);
+        startPolling(taskId, '/api/image/status');
+      }
     } catch (e: any) {
       setJobStatus('failed'); setStatusMsg(e.message);
       addToast({ title: 'Failed', message: e.message, type: 'error' });
@@ -354,8 +398,8 @@ const ImageGeneratorScreen: React.FC = () => {
   const allLoras = [...(loras.default || []), ...(loras.customs || [])];
   const characterLoras = allLoras.filter((l: any) => l.type === 'character');
   const styleLoras     = allLoras.filter((l: any) => l.type === 'style');
-  // LoRAs disabled only when both refs active simultaneously (Freepik API limitation)
   const usingRefs = (useReference && hasRef) && !!styleRefImage;
+  const aspectRatios = engine === 'klein' ? ASPECT_RATIOS_KLEIN : ASPECT_RATIOS_MYSTIC;
 
   const downloadImage = (url: string, i: number) => {
     const a = document.createElement('a');
@@ -366,7 +410,7 @@ const ImageGeneratorScreen: React.FC = () => {
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <div>
         <h2 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">Image Generator</h2>
-        <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">Powered by Freepik Mystic</p>
+        <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">Powered by Freepik</p>
       </div>
 
       {!freepikApiKey && (
@@ -385,6 +429,30 @@ const ImageGeneratorScreen: React.FC = () => {
           </button>
         ))}
       </div>
+
+      {/* Engine selector — shown on Generate tab */}
+      {activeTab === 'Generate' && (
+        <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
+          <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-2">AI Engine</p>
+          <div className="space-y-2">
+            {ENGINES.map(eng => (
+              <button key={eng.value} onClick={() => setEngine(eng.value)}
+                className={`w-full flex items-center gap-3 p-2.5 rounded-xl border text-left transition-colors ${engine === eng.value ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700 hover:border-indigo-400'}`}>
+                <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${engine === eng.value ? 'border-indigo-600 bg-indigo-600' : 'border-indigo-400'}`} />
+                <div>
+                  <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-100">{eng.label.split(' — ')[0]}</p>
+                  <p className="text-[10px] text-indigo-500 dark:text-indigo-400">{eng.label.split(' — ')[1]}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+          {engine === 'klein' && (
+            <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-2">
+              Flux 2 Klein sends your reference photo directly as a subject guide — better character face consistency than Mystic's structure reference. Sub-second generation. No LoRA support.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* ── GENERATE TAB ── */}
       {activeTab === 'Generate' && (
@@ -488,31 +556,34 @@ const ImageGeneratorScreen: React.FC = () => {
           </div>
 
           {/* Core controls */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className={`grid gap-3 ${engine === 'klein' ? 'grid-cols-2' : 'grid-cols-3'}`}>
             <div>
               <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Ratio</label>
               <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}
                 className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-                {ASPECT_RATIOS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                {aspectRatios.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Resolution</label>
               <select value={resolution} onChange={e => setResolution(e.target.value)}
                 className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-                {RESOLUTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                {RESOLUTIONS.filter(r => engine === 'klein' ? r.value !== '4k' : true).map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Style</label>
-              <select value={model} onChange={e => setModel(e.target.value)}
-                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-                {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </select>
-            </div>
+            {engine === 'mystic' && (
+              <div>
+                <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Style</label>
+                <select value={model} onChange={e => setModel(e.target.value)}
+                  className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                  {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+            )}
           </div>
 
-          {/* Advanced */}
+          {/* Advanced — Mystic only */}
+          {engine === 'mystic' && (
           <div>
             <button onClick={() => setShowAdvanced(!showAdvanced)}
               className="flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 py-1">
@@ -542,6 +613,7 @@ const ImageGeneratorScreen: React.FC = () => {
               </div>
             )}
           </div>
+          )}
 
           {/* Generate button */}
           <button onClick={handleGenerate} disabled={isGenerating || !prompt.trim() || !freepikApiKey}
@@ -549,9 +621,8 @@ const ImageGeneratorScreen: React.FC = () => {
             {isGenerating ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg || 'Generating…'}</> : <><Wand2 className="w-4 h-4" />Generate Image</>}
           </button>
 
-          {/* LoRA section — below generate button */}
-          {/* LoRA section — always visible, greyed when refs active */}
-          {freepikApiKey && (lorasLoaded ? allLoras.length > 0 : true) && (
+          {/* LoRA section — Mystic only, below generate button */}
+          {engine === 'mystic' && freepikApiKey && (lorasLoaded ? allLoras.length > 0 : true) && (
             <div className={`p-3 rounded-xl border space-y-3 transition-opacity ${usingRefs ? 'opacity-50' : ''} bg-indigo-50 dark:bg-indigo-900/30 border-indigo-100 dark:border-indigo-800`}>
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Your LoRAs</p>
