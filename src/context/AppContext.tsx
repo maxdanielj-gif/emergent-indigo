@@ -986,11 +986,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveData();
   };
   
-  const addToGallery = React.useCallback(async (item: GalleryItem) => {
-    if (!galleryLoaded) await loadGallery();
-    setGallery(prev => [item, ...prev]);
-    saveData();
-  }, [galleryLoaded, loadGallery, saveData]);
+  // Use a ref so addToGallery never creates circular deps in useCallback
+  const galleryLoadedRef = React.useRef(galleryLoaded);
+  React.useEffect(() => { galleryLoadedRef.current = galleryLoaded; }, [galleryLoaded]);
+  const loadGalleryRef = React.useRef(loadGallery);
+  React.useEffect(() => { loadGalleryRef.current = loadGallery; }, [loadGallery]);
+
+  const addToGallery = React.useCallback((item: GalleryItem) => {
+    // Ensure gallery is loaded before adding so saveData doesn't overwrite with empty list
+    if (!galleryLoadedRef.current) {
+      loadGalleryRef.current().then(() => {
+        setGallery(prev => [item, ...prev]);
+        saveData();
+      });
+    } else {
+      setGallery(prev => [item, ...prev]);
+      saveData();
+    }
+  }, [saveData]);
 
   const deleteImageFromGallery = (id: string) => {
     setGallery(prev => prev.filter(item => item.id !== id));
