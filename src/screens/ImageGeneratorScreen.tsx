@@ -134,7 +134,7 @@ const ImageGeneratorScreen: React.FC = () => {
   const [hdr,               setHdr]               = useState(50);
   const [creativeDetailing, setCreativeDetailing] = useState(33);
   const [showAdvanced,      setShowAdvanced]      = useState(false);
-  const [selectedLoraChars, setSelectedLoraChars] = useState<{id:string;strength:number}[]>([]);
+  const [selectedLoraChars, setSelectedLoraChars] = useState<{id:string;name:string;strength:number}[]>([]);
   const [selectedLoraStyles,setSelectedLoraStyles]= useState<{name:string;strength:number}[]>([]);
 
   // ── Klein-specific state ──────────────────────────────────────────────────
@@ -277,16 +277,15 @@ const ImageGeneratorScreen: React.FC = () => {
     const usingRefs = hasStructureRef && !!styleRefImage;
     const appearance = aiProfile.appearance?.trim();
     let finalPrompt = prompt.trim();
-    if (hasStructureRef && appearance) finalPrompt = `${appearance}. ${finalPrompt}`;
+    // Always prepend appearance description — not just when structure ref is on
+    if (appearance) finalPrompt = `${appearance}. ${finalPrompt}`;
     promptRef.current = finalPrompt;
 
     try {
       // ── Flux 2 Klein ──────────────────────────────────────────────────────
       if (engine === 'klein') {
-        // Always include appearance description in prompt for Klein
-        // (no separate structure_reference param like Mystic)
-        let kleinPrompt = prompt.trim();
-        if (appearance) kleinPrompt = `${appearance}. ${kleinPrompt}`;
+        // Appearance is already in finalPrompt above
+        let kleinPrompt = finalPrompt;
         promptRef.current = kleinPrompt;
 
         // Resolve actual images to send — slot 0 auto-fills with persona photo
@@ -322,13 +321,18 @@ const ImageGeneratorScreen: React.FC = () => {
       // ── Mystic ────────────────────────────────────────────────────────────
       } else {
         let enrichedPrompt = finalPrompt;
+        // Inject @charactername — Freepik requires the LoRA name in the prompt,
+        // NOT the numeric ID. e.g. @sara not @2
         if (!usingRefs && selectedLoraChars.length > 0) {
           selectedLoraChars.forEach((c: any) => {
-            const tag = `@${c.id}`;
+            // c.name is the LoRA's name string; c.id is the numeric ID
+            // The @ syntax uses the name
+            const tag = `@${c.name || c.id}`;
             if (!enrichedPrompt.includes(tag)) enrichedPrompt = `${tag} ${enrichedPrompt}`;
           });
         }
         promptRef.current = enrichedPrompt;
+        console.log(`[ImageGen Mystic] prompt: "${enrichedPrompt.slice(0,120)}", structRef:${hasStructureRef}, styleRef:${!!styleRefImage}, loraChars:${selectedLoraChars.length}`);
 
         const body: any = {
           prompt: enrichedPrompt, aspectRatio, resolution, model,
@@ -764,7 +768,7 @@ const ImageGeneratorScreen: React.FC = () => {
                       return (
                         <div key={l.id}
                           onClick={() => !usingRefs && !isTraining && setSelectedLoraChars(prev =>
-                            sel ? prev.filter(x => x.id !== String(l.id)) : [...prev, { id: String(l.id), strength: 100 }]
+                            sel ? prev.filter(x => x.id !== String(l.id)) : [...prev, { id: String(l.id), name: l.name, strength: 100 }]
                           )}
                           className={`flex items-center gap-2 p-2 rounded-lg border transition-colors
                             ${sel && !usingRefs ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60' : 'border-indigo-200 dark:border-indigo-700'}
