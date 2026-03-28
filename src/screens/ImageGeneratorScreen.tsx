@@ -552,10 +552,6 @@ const ImageGeneratorScreen: React.FC = () => {
             {isGenerating ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg || 'Generating…'}</> : <><Wand2 className="w-4 h-4" />Generate Image</>}
           </button>
 
-              </div>
-            </div>
-          )}
-
           {/* LoRA section — below generate button */}
           {/* LoRA section — always visible, greyed when refs active */}
           {freepikApiKey && (lorasLoaded ? allLoras.length > 0 : true) && (
