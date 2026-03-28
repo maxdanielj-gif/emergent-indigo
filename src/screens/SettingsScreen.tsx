@@ -29,6 +29,7 @@ const SettingsScreen: React.FC = () => {
     isSyncEnabled, setIsSyncEnabled,
     syncFrequency, setSyncFrequency,
     updateAIProfile,
+    isDebuggerEnabled, setIsDebuggerEnabled,
   } = useApp();
 
   const { chatHistory, addChatMessage, setChatHistory, sessions, setSessions, activeSessionId, setActiveSessionId } = useChat();
@@ -633,6 +634,18 @@ const SettingsScreen: React.FC = () => {
               <button onClick={() => setShowTimestamps(!showTimestamps)}
                 className={`w-10 h-6 rounded-full transition-colors ${showTimestamps ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
                 <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${showTimestamps ? 'translate-x-2' : '-translate-x-2'}`} />
+              </button>
+            </div>
+
+            {/* Mobile Debugger toggle */}
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <span className="text-sm text-indigo-900 dark:text-indigo-100 block">🐛 Mobile Debugger</span>
+                <span className="text-xs text-indigo-500 dark:text-indigo-400">Shows a floating bug button for viewing logs and running JS.</span>
+              </div>
+              <button onClick={() => setIsDebuggerEnabled(!isDebuggerEnabled)}
+                className={`w-10 h-6 rounded-full transition-colors flex-shrink-0 ${isDebuggerEnabled ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
+                <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-auto ${isDebuggerEnabled ? 'translate-x-2' : '-translate-x-2'}`} />
               </button>
             </div>
 
