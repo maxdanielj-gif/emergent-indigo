@@ -355,10 +355,22 @@ const ImageGeneratorScreen: React.FC = () => {
         let enrichedPrompt = finalPrompt;
         // Inject @charactername for LoRA characters (only when LoRAs aren't blocked)
         if (!lorasBlocked && selectedLoraChars.length > 0) {
-          selectedLoraChars.forEach((c: any) => {
-            const tag = `@${c.name || c.id}`;
+          const char = selectedLoraChars[0];
+          const charName = char.name;
+          // Validate: name must be a non-numeric string (numeric = we accidentally stored the ID)
+          const nameIsValid = charName && !/^\d+$/.test(charName);
+          if (nameIsValid) {
+            const tag = `@${charName}`;
             if (!enrichedPrompt.includes(tag)) enrichedPrompt = `${tag} ${enrichedPrompt}`;
-          });
+            console.log(`[ImageGen Mystic] Injecting LoRA tag: ${tag}`);
+          } else {
+            // Name is missing or is a number — warn and skip the @ tag
+            // The styling.characters ID will still be sent but may not work without @name in prompt
+            console.warn(`[ImageGen Mystic] LoRA character name is missing or numeric ("${charName}"). Cannot inject @tag. Refresh the LoRA list.`);
+            addToast({ title: 'LoRA name missing', message: 'Could not find character name. Hit Refresh on the LoRA list and try again.', type: 'warning' });
+            setJobStatus('idle');
+            return;
+          }
         }
         promptRef.current = enrichedPrompt;
         console.log(`[ImageGen Mystic] prompt: "${enrichedPrompt.slice(0,120)}", structRef:${hasStructureRef}, styleRef:${!!styleRefImage}, model:${model}, lorasBlocked:${lorasBlocked}, loraChars:${selectedLoraChars.length}`);
