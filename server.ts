@@ -915,11 +915,17 @@ app.get("/api/image/status/:taskId", async (req, res) => {
     });
     if (!response.ok) {
       const errText = await response.text();
+      console.error(`Status check error ${response.status} for task ${req.params.taskId}:`, errText);
       return res.status(response.status).json({ error: errText });
     }
     const data = await response.json();
-    if (data?.data?.status === "COMPLETED")
-      console.log(`Freepik task ${req.params.taskId} COMPLETED — ${data.data.generated?.length || 0} image(s)`);
+    const taskStatus = data?.data?.status;
+
+    // Log every status change (not just completion) so we can debug
+    console.log(`Task ${req.params.taskId} status: ${taskStatus}, generated: ${data?.data?.generated?.length || 0}`);
+    if (taskStatus === 'COMPLETED' || taskStatus === 'FAILED') {
+      console.log(`Full Freepik response for ${req.params.taskId}:`, JSON.stringify(data).slice(0, 500));
+    }
 
     const generated: string[] = data?.data?.generated || [];
     res.json({ ...data?.data, _imageUrls: generated });
