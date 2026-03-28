@@ -1037,7 +1037,15 @@ app.get("/api/image/loras", async (req, res) => {
       headers: { "x-freepik-api-key": apiKey },
     });
     if (!r.ok) return res.status(r.status).json({ error: await r.text() });
-    res.json(await r.json());
+    const data = await r.json();
+    // Log custom LoRAs so we can see their actual field names
+    const customs = data?.data?.customs || [];
+    if (customs.length > 0) {
+      console.log(`Custom LoRAs (${customs.length}):`, JSON.stringify(customs.map((l: any) => ({
+        id: l.id, name: l.name, type: l.type, status: l.training?.status, keys: Object.keys(l)
+      }))));
+    }
+    res.json(data);
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
