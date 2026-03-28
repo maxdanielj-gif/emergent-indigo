@@ -246,6 +246,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [galleryLoaded, setGalleryLoaded] = useState(false);
+  const galleryLoadedRef = React.useRef(false);
+  // Keep ref in sync so saveData always reads current value without needing it as a dep
+  React.useEffect(() => { galleryLoadedRef.current = galleryLoaded; }, [galleryLoaded]);
 
   const loadGallery = async () => {
     if (galleryLoaded) return;
@@ -709,7 +712,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // Save gallery items individually to avoid large stringification issues
           // IMPORTANT: only save when gallery has actually been loaded — otherwise
           // an early saveData() call with an empty array would wipe all saved items.
-          if (galleryLoaded) {
+          if (galleryLoadedRef.current) {
             const galleryIds = gallery.map(item => item.id);
             await saveToDB('indigo_app_data_gallery_ids', galleryIds);
             for (const item of gallery) {
