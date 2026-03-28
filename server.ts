@@ -835,7 +835,8 @@ app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res
     prompt, negativePrompt, aspectRatio,
     structureReference, styleReference,
     resolution, model, adherence, structureStrength, hdr, creativeDetailing,
-    loraCharacters, loraStyles,   // arrays of { id, strength }
+    engine: mysticEngine, fixed_generation,
+    loraCharacters, loraStyles,
     apiKey: userApiKey,
   } = req.body;
 
@@ -850,36 +851,48 @@ app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res
       aspect_ratio:     aspectRatio      || "square_1_1",
       model:            model            || "realism",
       filter_nsfw:      true,
-      fixed_generation: false,
+      fixed_generation: fixed_generation ?? false,
     };
 
-    if (negativePrompt?.trim())          body.negative_prompt    = negativePrompt.trim();
-    if (adherence        !== undefined)  body.adherence          = adherence;
-    if (structureStrength !== undefined) body.structure_strength = structureStrength;
-    if (hdr              !== undefined)  body.hdr                = hdr;
-    if (creativeDetailing !== undefined) body.creative_detailing = creativeDetailing;
+    if (negativePrompt?.trim())            body.negative_prompt    = negativePrompt.trim();
+    if (mysticEngine && mysticEngine !== 'automatic') body.engine = mysticEngine;
+    if (creativeDetailing !== undefined)   body.creative_detailing = creativeDetailing;
 
     if (structureReference) {
       body.structure_reference = structureReference.includes(",")
         ? structureReference.split(",")[1] : structureReference;
+      if (structureStrength !== undefined) body.structure_strength = structureStrength;
     }
+
     if (styleReference) {
       body.style_reference = styleReference.includes(",")
         ? styleReference.split(",")[1] : styleReference;
+      // adherence and hdr ONLY take effect when style_reference is present
+      if (adherence !== undefined) body.adherence = adherence;
+      if (hdr       !== undefined) body.hdr       = hdr;
     }
 
-    // LoRAs — only when no structure/style references (Freepik ignores LoRAs when refs are present)
+    // LoRAs: ignored by API when ANY reference image is present, or when using
+    // fluid/flexible/super_real/editorial_portraits models
     const hasRefs = !!(structureReference || styleReference);
-    if (!hasRefs) {
+    const loraIncompatibleModels = ['fluid', 'flexible', 'super_real', 'editorial_portraits'];
+    const lorasAllowed = !hasRefs && !loraIncompatibleModels.includes(model);
+
+    if (lorasAllowed) {
       const styling: any = {};
-      if (Array.isArray(loraCharacters) && loraCharacters.length > 0)
-        styling.characters = loraCharacters.map((c: any) => ({ id: String(c.id), strength: c.strength ?? 100 }));
-      if (Array.isArray(loraStyles) && loraStyles.length > 0)
-        styling.styles = loraStyles.map((s: any) => ({ name: String(s.name), strength: s.strength ?? 100 }));
+      // Max 1 character and 1 style per API schema (maxItems: 1)
+      if (Array.isArray(loraCharacters) && loraCharacters.length > 0) {
+        const c = loraCharacters[0];
+        styling.characters = [{ id: String(c.id), strength: c.strength ?? 100 }];
+      }
+      if (Array.isArray(loraStyles) && loraStyles.length > 0) {
+        const s = loraStyles[0];
+        styling.styles = [{ name: String(s.name), strength: s.strength ?? 100 }];
+      }
       if (Object.keys(styling).length > 0) body.styling = styling;
     }
 
-    console.log(`Freepik Mystic — ${body.resolution}, model:${body.model}, structRef:${!!structureReference}, styleRef:${!!styleReference}, loraChars:${loraCharacters?.length||0}, prompt starts: "${body.prompt.slice(0,80)}"`);
+    console.log(`Freepik Mystic — ${body.resolution}, model:${body.model}, engine:${body.engine||'auto'}, structRef:${!!structureReference}, styleRef:${!!styleReference}, lorasAllowed:${lorasAllowed}, loraChars:${loraCharacters?.length||0}, prompt: "${body.prompt.slice(0,100)}"`);
 
     const response = await fetch("https://api.freepik.com/v1/ai/mystic", {
       method:  "POST",
