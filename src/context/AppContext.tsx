@@ -707,18 +707,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           await saveToDB('indigo_app_data_active_profile', JSON.stringify(aiProfile));
           
           // Save gallery items individually to avoid large stringification issues
-          const galleryIds = gallery.map(item => item.id);
-          await saveToDB('indigo_app_data_gallery_ids', galleryIds);
-          for (const item of gallery) {
-              await saveToDB(`indigo_app_data_gallery_item_${item.id}`, JSON.stringify(item));
-          }
-          
-          // Clean up deleted gallery items
-          const existingGalleryIds = await loadFromDB('indigo_app_data_gallery_ids') || [];
-          for (const id of existingGalleryIds) {
-              if (!galleryIds.includes(id)) {
-                  await deleteFromDB(`indigo_app_data_gallery_item_${id}`);
-              }
+          // IMPORTANT: only save when gallery has actually been loaded — otherwise
+          // an early saveData() call with an empty array would wipe all saved items.
+          if (galleryLoaded) {
+            const galleryIds = gallery.map(item => item.id);
+            await saveToDB('indigo_app_data_gallery_ids', galleryIds);
+            for (const item of gallery) {
+                await saveToDB(`indigo_app_data_gallery_item_${item.id}`, JSON.stringify(item));
+            }
+            
+            // Clean up deleted gallery items
+            const existingGalleryIds = await loadFromDB('indigo_app_data_gallery_ids') || [];
+            for (const id of existingGalleryIds) {
+                if (!galleryIds.includes(id)) {
+                    await deleteFromDB(`indigo_app_data_gallery_item_${id}`);
+                }
+            }
           }
 
           await saveToDB('indigo_app_data_backgrounds', JSON.stringify(backgrounds));
@@ -982,10 +986,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveData();
   };
   
-  const addToGallery = React.useCallback((item: GalleryItem) => {
+  const addToGallery = React.useCallback(async (item: GalleryItem) => {
+    if (!galleryLoaded) await loadGallery();
     setGallery(prev => [item, ...prev]);
     saveData();
-  }, [saveData]);
+  }, [galleryLoaded, loadGallery, saveData]);
 
   const deleteImageFromGallery = (id: string) => {
     setGallery(prev => prev.filter(item => item.id !== id));
