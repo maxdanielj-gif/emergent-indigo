@@ -135,6 +135,7 @@ const ImageGeneratorScreen: React.FC = () => {
   const [jobStatus,   setJobStatus]   = useState<JobStatus>('idle');
   const [statusMsg,   setStatusMsg]   = useState('');
   const [resultImages,setResultImages]= useState<string[]>([]);
+  const [debugLog,    setDebugLog]    = useState<string[]>([]);
 
   const pollRef    = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -168,20 +169,27 @@ const ImageGeneratorScreen: React.FC = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
     let consecutiveErrors = 0;
+    const log = (msg: string) => {
+      const ts = new Date().toLocaleTimeString();
+      setDebugLog(prev => [`[${ts}] ${msg}`, ...prev].slice(0, 20));
+    };
+
+    log(`Polling started — taskId: ${taskId}`);
 
     pollRef.current = setInterval(async () => {
       try {
         const key = freepikKeyRef.current || '';
-        const r = await fetch(`${statusEndpoint}/${taskId}?api_key=${encodeURIComponent(key)}`);
+        const url = `${statusEndpoint}/${taskId}?api_key=${encodeURIComponent(key)}`;
+        const r = await fetch(url);
 
         if (!r.ok) {
           consecutiveErrors++;
-          console.warn(`Poll error ${r.status} (${consecutiveErrors} in a row)`);
-          // Stop after 5 consecutive HTTP errors — something is broken
+          log(`HTTP ${r.status} error (${consecutiveErrors}/5)`);
           if (consecutiveErrors >= 5) {
             clearInterval(pollRef.current!); clearTimeout(timeoutRef.current!); pollRef.current = null;
-            let errMsg = `Polling failed repeatedly (HTTP ${r.status})`;
+            let errMsg = `Polling failed: HTTP ${r.status}`;
             try { const e = await r.json(); errMsg = e.error || errMsg; } catch {}
+            log(`Stopped: ${errMsg}`);
             setJobStatus('failed'); setStatusMsg(errMsg);
             addToast({ title: 'Generation failed', message: errMsg, type: 'error' });
           }
@@ -191,11 +199,12 @@ const ImageGeneratorScreen: React.FC = () => {
         consecutiveErrors = 0;
         const data = await r.json();
         const status = String(data.status || '').toUpperCase();
-        console.log(`Poll ${taskId}: status=${status}`);
+        const urlCount = (data._imageUrls || []).length;
+        log(`status=${status} urls=${urlCount} generated=${JSON.stringify(data.generated || []).slice(0,80)}`);
 
         if (status === 'COMPLETED') {
           clearInterval(pollRef.current!); clearTimeout(timeoutRef.current!); pollRef.current = null;
-          const urls: string[] = data._imageUrls || [];
+          const urls: string[] = data._imageUrls || data.generated || [];
           if (urls.length > 0) {
             setResultImages(urls); setJobStatus('succeeded'); setStatusMsg('');
             urls.forEach((url, i) => addToGallery({
@@ -204,29 +213,32 @@ const ImageGeneratorScreen: React.FC = () => {
             }));
             addToast({ title: 'Done!', message: 'Saved to gallery.', type: 'success' });
           } else {
-            setJobStatus('failed'); setStatusMsg('Task completed but no images returned. The content may have been filtered.');
+            log('COMPLETED but no URLs in response');
+            setJobStatus('failed'); setStatusMsg('Task completed but no images returned. May have been filtered for content.');
           }
         } else if (['FAILED','ERROR','CANCELLED'].includes(status)) {
           clearInterval(pollRef.current!); clearTimeout(timeoutRef.current!); pollRef.current = null;
           const msg = data.error || data.message || `Generation ${status.toLowerCase()}.`;
+          log(`Terminal status: ${status} — ${msg}`);
           setJobStatus('failed'); setStatusMsg(msg);
           addToast({ title: 'Generation failed', message: msg, type: 'error' });
         }
-        // IN_PROGRESS / CREATED — keep polling
       } catch (e: any) {
         consecutiveErrors++;
-        console.warn('Poll exception:', e.message, `(${consecutiveErrors} in a row)`);
+        const msg = e.message || 'unknown error';
+        log(`Exception (${consecutiveErrors}/5): ${msg}`);
         if (consecutiveErrors >= 5) {
           clearInterval(pollRef.current!); clearTimeout(timeoutRef.current!); pollRef.current = null;
           setJobStatus('failed'); setStatusMsg('Lost connection while waiting for generation.');
         }
       }
-    }, 4000); // 4s interval — Freepik jobs take 10–90s, no need to hammer every 3s
+    }, 4000);
 
     timeoutRef.current = setTimeout(() => {
       if (pollRef.current) {
         clearInterval(pollRef.current); pollRef.current = null;
-        setJobStatus('failed'); setStatusMsg('Timed out after 3 minutes. Check freepik.com/developers/dashboard for task status.');
+        log('Timed out after 3 minutes');
+        setJobStatus('failed'); setStatusMsg('Timed out after 3 minutes.');
       }
     }, 3 * 60 * 1000);
   };
@@ -236,25 +248,18 @@ const ImageGeneratorScreen: React.FC = () => {
     if (!prompt.trim()) { addToast({ title: 'Prompt required', message: 'Describe the image you want.', type: 'warning' }); return; }
     if (!freepikApiKey) { addToast({ title: 'No Freepik key', message: 'Add your key in Settings.', type: 'warning' }); return; }
 
-    setJobStatus('creating'); setStatusMsg('Creating task…'); setResultImages([]);
+    setJobStatus('creating'); setStatusMsg('Creating task…'); setResultImages([]); setDebugLog([]);
 
     const hasStructureRef = useReference && hasRef;
     const appearance = aiProfile.appearance?.trim();
     let finalPrompt = prompt.trim();
     if (hasStructureRef && appearance) finalPrompt = `${appearance}. ${finalPrompt}`;
-    // Build the final prompt with @ character references injected
-    // Freepik requires @name in the prompt text to activate character references
+    // Build enriched prompt — inject @charactername for LoRA characters if selected
+    // Note: @img1 syntax is website-only, NOT valid in the API. structure_reference
+    // is passed as a separate parameter, not referenced in the prompt.
     let enrichedPrompt = finalPrompt;
 
-    if (hasStructureRef) {
-      // Structure reference image is referenced as @img1 in the prompt
-      if (!enrichedPrompt.includes('@img1')) {
-        enrichedPrompt = `@img1 ${enrichedPrompt}`;
-      }
-    }
-
     if (!usingRefs && selectedLoraChars.length > 0) {
-      // Inject @charactername for each selected character LoRA if not already in prompt
       selectedLoraChars.forEach((c: any) => {
         const tag = `@${c.id}`;
         if (!enrichedPrompt.includes(tag)) {
@@ -275,14 +280,16 @@ const ImageGeneratorScreen: React.FC = () => {
         ...(negPrompt.trim() ? { negativePrompt: negPrompt.trim() } : {}),
         ...(hasStructureRef ? { structureReference: aiProfile.referenceImage, structureStrength } : {}),
         ...(styleRefImage   ? { styleReference: styleRefImage } : {}),
-        // LoRAs only when no reference images (Freepik ignores them otherwise)
         ...(!usingRefs && selectedLoraChars.length  > 0 ? { loraCharacters: selectedLoraChars  } : {}),
         ...(!usingRefs && selectedLoraStyles.length > 0 ? { loraStyles:     selectedLoraStyles } : {}),
       };
 
       const r = await fetch('/api/image/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
       if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Failed'); }
-      const { taskId } = await r.json();
+      const result = await r.json();
+      const taskId = result.taskId;
+      if (!taskId) throw new Error(`No task ID returned. Response: ${JSON.stringify(result)}`);
+      setDebugLog([`[${new Date().toLocaleTimeString()}] Task created: ${taskId}`]);
       setJobStatus('waiting'); setStatusMsg(`Generating at ${RESOLUTIONS.find(x=>x.value===resolution)?.label||resolution}…`);
       startPolling(taskId, '/api/image/status');
     } catch (e: any) {
@@ -457,10 +464,6 @@ const ImageGeneratorScreen: React.FC = () => {
               <div className="pt-1 space-y-2">
                 <Slider label="Structure Strength" value={structureStrength} min={0} max={100} onChange={setStructureStrength} />
                 <p className="text-[10px] text-indigo-400 -mt-1"><strong>20–40</strong> = face/hair/body only. <strong>60–80</strong> = also copies pose &amp; outfit.</p>
-                <div className="flex items-center gap-1.5 px-2 py-1.5 bg-indigo-200 dark:bg-indigo-800/70 rounded-lg">
-                  <span className="text-[10px] font-mono font-bold text-indigo-700 dark:text-indigo-300">@img1</span>
-                  <span className="text-[10px] text-indigo-500 dark:text-indigo-400">is automatically added to your prompt — this tells Freepik to use this image for the face and character</span>
-                </div>
               </div>
             )}
 
@@ -552,6 +555,21 @@ const ImageGeneratorScreen: React.FC = () => {
             className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {isGenerating ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg || 'Generating…'}</> : <><Wand2 className="w-4 h-4" />Generate Image</>}
           </button>
+
+          {/* Debug log — visible while generating so errors are readable on Android */}
+          {(isGenerating || debugLog.length > 0) && (
+            <div className="p-3 bg-gray-900 rounded-xl border border-gray-700">
+              <p className="text-[10px] font-bold text-gray-400 mb-1 uppercase tracking-wider">Generation Log</p>
+              <div className="space-y-0.5">
+                {debugLog.map((line, i) => (
+                  <p key={i} className="text-[10px] font-mono text-green-400 break-all">{line}</p>
+                ))}
+                {isGenerating && debugLog.length === 0 && (
+                  <p className="text-[10px] font-mono text-yellow-400">Waiting for task ID…</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* LoRA section — below generate button */}
           {/* LoRA section — always visible, greyed when refs active */}
