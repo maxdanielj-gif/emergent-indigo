@@ -530,18 +530,18 @@ const ImageGeneratorScreen: React.FC = () => {
       {activeTab === 'Generate' && (
         <div className="space-y-4">
 
-          {/* ── MYSTIC: Structure + Style reference slots ── */}
+          {/* ── MYSTIC: Pose + Style reference slots ── */}
           {engine === 'mystic' && (
           <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
             <p className="text-sm font-semibold text-indigo-800 dark:text-indigo-200">Reference Images</p>
             <div className="grid grid-cols-2 gap-3">
-              {/* Slot 1 — Character / Structure */}
+              {/* Slot 1 — Pose Reference (structure_reference) */}
               <div className="space-y-2">
-                <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Character Reference</p>
-                <p className="text-[10px] text-indigo-400 dark:text-indigo-500">Guides face shape and body proportions</p>
+                <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Pose Reference</p>
+                <p className="text-[10px] text-indigo-400 dark:text-indigo-500">Copies body pose and composition. Does not copy face or identity.</p>
                 {hasRef && useReference ? (
                   <div className="relative">
-                    <img src={aiProfile.referenceImage!} alt="Structure ref"
+                    <img src={aiProfile.referenceImage!} alt="Pose ref"
                       className="w-full aspect-square object-cover rounded-xl border-2 border-indigo-400 dark:border-indigo-500" />
                     <div className="absolute bottom-1 left-1 right-1 bg-indigo-600/80 rounded-lg px-1.5 py-0.5 text-[9px] text-white text-center truncate">
                       {aiProfile.name}'s profile image
@@ -564,7 +564,7 @@ const ImageGeneratorScreen: React.FC = () => {
               {/* Slot 2 — Style Reference */}
               <div className="space-y-2">
                 <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Style Reference</p>
-                <p className="text-[10px] text-indigo-400 dark:text-indigo-500">Transfers look, lighting, and aesthetic</p>
+                <p className="text-[10px] text-indigo-400 dark:text-indigo-500">Transfers lighting, color palette, and artistic look. Prompt has limited effect when active.</p>
                 {styleRefImage ? (
                   <div className="relative">
                     <img src={styleRefImage} alt="Style ref"
@@ -591,21 +591,19 @@ const ImageGeneratorScreen: React.FC = () => {
             </div>
             {useReference && hasRef && (
               <div className="pt-1 space-y-2">
-                <Slider label="Structure Strength" value={structureStrength} min={0} max={100} onChange={setStructureStrength} />
-                <p className="text-[10px] text-indigo-400 -mt-1"><strong>20–40</strong> = face/hair/body only. <strong>60–80</strong> = also copies pose &amp; outfit.</p>
+                <Slider label="Pose Strength" value={structureStrength} min={0} max={100} onChange={setStructureStrength} />
+                <p className="text-[10px] text-indigo-400 -mt-1"><strong>Lower</strong> = looser interpretation of the pose. <strong>Higher</strong> = more tightly copies the exact pose, framing, and composition.</p>
+                <p className="text-[10px] text-amber-500 dark:text-amber-400">⚠ Freepik will force the same aspect ratio as the reference photo, ignoring the Ratio setting below. Use a reference photo with the same shape as your desired output.</p>
               </div>
-            )}
-            {useReference && hasRef && !aiProfile.appearance && (
-              <p className="text-[10px] text-amber-500 dark:text-amber-400">No appearance description in AI Profile — hair/eye/skin colors may not match.</p>
             )}
             {useReference && hasRef && aiProfile.appearance && (
               <p className="text-[10px] text-indigo-500 dark:text-indigo-400">
-                <span className="font-medium">Appearance included: </span>
-                {aiProfile.appearance.slice(0, 100)}{aiProfile.appearance.length > 100 ? '…' : ''}
+                <span className="font-medium">Appearance description included in prompt. </span>
+                Style reference ignores this — use Pose Reference or LoRA instead for character appearance.
               </p>
             )}
             {renderLorasBlocked && (selectedLoraChars.length + selectedLoraStyles.length > 0) && (
-              <p className="text-[10px] text-amber-500">⚠ LoRAs are disabled (any reference image or selected model blocks LoRA support).</p>
+              <p className="text-[10px] text-amber-500">⚠ LoRAs are disabled when any reference image is active.</p>
             )}
           </div>
           )}
@@ -889,6 +887,29 @@ const ImageGeneratorScreen: React.FC = () => {
                       );
                     })}
                   </div>
+                </div>
+              )}
+              {/* Strength sliders — shown when a LoRA is selected */}
+              {!renderLorasBlocked && selectedLoraChars.length > 0 && (
+                <div>
+                  <Slider
+                    label={`Character strength: ${selectedLoraChars[0].name}`}
+                    value={selectedLoraChars[0].strength}
+                    min={0} max={200}
+                    onChange={v => setSelectedLoraChars(prev => prev.map((c, i) => i === 0 ? { ...c, strength: v } : c))}
+                  />
+                  <p className="text-[10px] text-indigo-400 -mt-1">Lower (60–80) = character guides the style without overwhelming the prompt. Higher (100–150) = character dominates. Default 100.</p>
+                </div>
+              )}
+              {!renderLorasBlocked && selectedLoraStyles.length > 0 && (
+                <div>
+                  <Slider
+                    label={`Style strength: ${selectedLoraStyles[0].name}`}
+                    value={selectedLoraStyles[0].strength}
+                    min={0} max={200}
+                    onChange={v => setSelectedLoraStyles(prev => prev.map((s, i) => i === 0 ? { ...s, strength: v } : s))}
+                  />
+                  <p className="text-[10px] text-indigo-400 -mt-1">Lower values let the prompt and model override the style. Higher values force the style. Default 100.</p>
                 </div>
               )}
             </div>
