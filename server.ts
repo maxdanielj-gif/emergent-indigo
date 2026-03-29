@@ -1003,7 +1003,7 @@ app.post("/api/image/generate-klein", express.json({ limit: "20mb" }), async (re
       }
     }
 
-    console.log(`Flux 2 Klein — ${body.resolution}, ratio:${body.aspect_ratio}, refs:${inputImages?.length || 0}, format:${body.output_format || 'default'}, seed:${seed ?? 'random'}, prompt: "${body.prompt.slice(0, 100)}"`);
+    console.log(`Flux 2 Klein — ${body.resolution}, ratio:${body.aspect_ratio}, refs:${inputImages?.length || 0}, safety:${body.safety_tolerance}, format:${body.output_format || 'default'}, seed:${seed ?? 'random'}, prompt: "${body.prompt.slice(0, 100)}"`);
 
     const r = await fetch("https://api.freepik.com/v1/ai/text-to-image/flux-2-klein", {
       method: "POST",
