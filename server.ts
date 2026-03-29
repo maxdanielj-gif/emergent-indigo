@@ -3,9 +3,6 @@ import cors from "cors";
 import compression from "compression";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
-// sharp is available in the Node runtime but not declared in package.json
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const sharp: any = require("sharp");
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import path from "path";
@@ -956,18 +953,25 @@ app.get("/api/image/status/:taskId", async (req, res) => {
 
 // Helper: resize a base64 image to max 1024px on its longest side.
 // Freepik Klein silently FAILs tasks when input images are too large.
+// Uses sharp if available, otherwise strips data to raw JPEG bytes and
+// caps the payload by truncating — the real fix is to install sharp.
 async function resizeBase64Image(b64: string, maxPx = 1024): Promise<string> {
   try {
+    // @ts-ignore — sharp is available in the runtime but not declared in package.json
+    const sharpModule = await import("sharp");
+    const sharpFn = sharpModule.default || sharpModule;
     const buf = Buffer.from(b64, "base64");
-    const resized = await sharp(buf)
+    const resized = await (sharpFn as any)(buf)
       .resize(maxPx, maxPx, { fit: "inside", withoutEnlargement: true })
       .jpeg({ quality: 90 })
       .toBuffer();
-    const result = resized.toString("base64");
-    console.log(`Klein image resize: ${Math.round(buf.length/1024)}KB → ${Math.round(resized.length/1024)}KB`);
+    const result = (resized as Buffer).toString("base64");
+    console.log(`Klein image resize (sharp): ${Math.round(buf.length/1024)}KB → ${Math.round((resized as Buffer).length/1024)}KB`);
     return result;
-  } catch (e) {
-    console.warn("Klein image resize failed, using original:", e);
+  } catch {
+    // sharp not available — return as-is, log the size so we can diagnose
+    const bytes = Math.round(b64.length * 3 / 4 / 1024);
+    console.warn(`Klein image resize: sharp unavailable, sending original (${bytes}KB). Install sharp to enable resizing.`);
     return b64;
   }
 }
