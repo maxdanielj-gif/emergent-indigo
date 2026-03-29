@@ -892,7 +892,7 @@ app.post("/api/image/generate", express.json({ limit: "20mb" }), async (req, res
       if (Object.keys(styling).length > 0) body.styling = styling;
     }
 
-    console.log(`Freepik Mystic — ${body.resolution}, model:${body.model}, engine:${body.engine||'auto'}, structRef:${!!structureReference}, styleRef:${!!styleReference}, lorasAllowed:${lorasAllowed}, loraChars:${loraCharacters?.length||0}, prompt: "${body.prompt.slice(0,100)}"`);
+    console.log(`Freepik Mystic — ${body.resolution}, model:${body.model}, engine:${body.engine||'auto'}, structRef:${!!structureReference}, styleRef:${!!styleReference}, lorasAllowed:${lorasAllowed}, loraChars:${loraCharacters?.length||0}, fixedGen:${body.fixed_generation}, prompt: "${body.prompt.slice(0,100)}"`);
 
     const response = await fetch("https://api.freepik.com/v1/ai/mystic", {
       method:  "POST",
