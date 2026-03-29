@@ -32,7 +32,7 @@ const ASPECT_RATIOS_MYSTIC = [
   { label: 'Social (5:4)',            value: 'social_5_4'               },
 ];
 
-// Klein supports the same set
+// Klein supports these ratios only — smartphone_horizontal/vertical_20_9 not supported
 const ASPECT_RATIOS_KLEIN = [
   { label: 'Square (1:1)',      value: 'square_1_1'      },
   { label: 'Portrait (2:3)',    value: 'portrait_2_3'    },
@@ -41,6 +41,8 @@ const ASPECT_RATIOS_KLEIN = [
   { label: 'Landscape (3:2)',   value: 'standard_3_2'    },
   { label: 'Tall (9:16)',       value: 'social_story_9_16'},
   { label: 'Wide (16:9)',       value: 'widescreen_16_9' },
+  { label: 'Wide (2:1)',        value: 'horizontal_2_1'  },
+  { label: 'Tall (1:2)',        value: 'vertical_1_2'    },
   { label: 'Social (4:5)',      value: 'social_post_4_5' },
 ];
 
