@@ -167,8 +167,9 @@ const ImageGeneratorScreen: React.FC = () => {
 
   // ── Klein-specific state ──────────────────────────────────────────────────
   const [kleinImages,       setKleinImages]       = useState<(string|null)[]>([null, null, null, null]);
+  const [kleinSlot0Cleared, setKleinSlot0Cleared] = useState(false); // user explicitly removed auto-fill
   const [kleinSeed,         setKleinSeed]         = useState('');
-  const [kleinSafety,       setKleinSafety]       = useState(2);
+  const [kleinSafety,       setKleinSafety]       = useState(4);
   const [kleinOutputFormat, setKleinOutputFormat] = useState<'png'|'jpeg'>('jpeg');
 
   // ── LoRA state (shared) ───────────────────────────────────────────────────
@@ -364,9 +365,10 @@ const ImageGeneratorScreen: React.FC = () => {
         promptRef.current = kleinPrompt;
 
         // Resolve actual images to send — slot 0 auto-fills with persona photo
+        // unless the user explicitly cleared it
         const resolvedImages = kleinImages.map((img, i) => {
           if (img) return img;
-          if (i === 0 && hasRef && aiProfile.referenceImage) return aiProfile.referenceImage;
+          if (i === 0 && hasRef && aiProfile.referenceImage && !kleinSlot0Cleared) return aiProfile.referenceImage;
           return null;
         }).filter(Boolean) as string[];
 
@@ -660,48 +662,52 @@ const ImageGeneratorScreen: React.FC = () => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               {([0,1,2,3] as const).map(i => {
-                const label = i === 0 ? 'Image 1' : `Image ${i+1}`;
-                // Slot 0 can auto-use the persona's photo
-                const isPersonaSlot = i === 0;
+                const label = `Image ${i+1}`;
                 const val = kleinImages[i];
                 const setVal = (v: string | null) => setKleinImages(prev => { const n=[...prev]; n[i]=v; return n; });
 
-                // Auto-fill slot 0 with persona photo if available and not overridden
-                const displayImg = val ?? (isPersonaSlot && hasRef ? aiProfile.referenceImage! : null);
-                const isAutoFilled = !val && isPersonaSlot && hasRef;
+                // Slot 0 auto-fills with persona photo UNLESS user has cleared it
+                const isAutoFilled = i === 0 && !val && hasRef && !kleinSlot0Cleared;
+                const displayImg = isAutoFilled ? aiProfile.referenceImage! : val;
 
                 return (
                   <div key={i} className="space-y-1">
-                    <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">{label}{isAutoFilled ? <span className="text-[9px] text-indigo-400 ml-1">(auto)</span> : ''}</p>
+                    <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                      {label}{isAutoFilled ? <span className="text-[9px] text-indigo-400 ml-1">(auto)</span> : ''}
+                    </p>
                     {displayImg ? (
                       <div className="relative">
                         <img src={displayImg} alt={label}
                           className={`w-full aspect-square object-cover rounded-xl border-2 ${isAutoFilled ? 'border-indigo-300 dark:border-indigo-600' : 'border-indigo-400 dark:border-indigo-500'}`} />
-                        {isAutoFilled ? (
-                          <div className="absolute bottom-1 left-1 right-1 bg-indigo-600/80 rounded-lg px-1.5 py-0.5 text-[9px] text-white text-center truncate">{aiProfile.name}'s photo</div>
-                        ) : (
-                          <button onClick={() => setVal(null)}
-                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center">
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
                         {isAutoFilled && (
-                          <button onClick={() => setVal(null /* override to clear */)}
-                            className="absolute top-1 right-1 w-5 h-5 bg-red-500/80 text-white rounded-full flex items-center justify-center"
-                            title="Remove auto-filled photo">
-                            <X className="w-3 h-3" />
-                          </button>
+                          <div className="absolute bottom-1 left-1 right-1 bg-indigo-600/80 rounded-lg px-1.5 py-0.5 text-[9px] text-white text-center truncate">
+                            {aiProfile.name}'s photo
+                          </div>
                         )}
+                        <button
+                          onClick={() => {
+                            if (i === 0 && isAutoFilled) {
+                              setKleinSlot0Cleared(true); // prevent re-auto-fill
+                            } else {
+                              setVal(null);
+                            }
+                          }}
+                          className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center">
+                          <X className="w-3 h-3" />
+                        </button>
                       </div>
                     ) : (
                       <label className="w-full aspect-square rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-600 flex flex-col items-center justify-center gap-1 hover:bg-indigo-100 dark:hover:bg-indigo-800 transition-colors cursor-pointer text-indigo-400 dark:text-indigo-500">
                         <Upload className="w-5 h-5" />
-                        <span className="text-[10px]">Upload</span>
+                        <span className="text-[10px]">{i === 0 && kleinSlot0Cleared && hasRef ? `Re-add ${aiProfile.name}'s photo` : 'Upload'}</span>
                         <input type="file" accept="image/*" className="hidden"
                           onChange={e => {
                             const f = e.target.files?.[0]; if (!f) return;
                             const reader = new FileReader();
-                            reader.onload = () => setVal(reader.result as string);
+                            reader.onload = () => {
+                              setVal(reader.result as string);
+                              if (i === 0) setKleinSlot0Cleared(false); // uploading re-enables tracking
+                            };
                             reader.readAsDataURL(f); e.target.value = '';
                           }} />
                       </label>
