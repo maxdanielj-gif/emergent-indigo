@@ -3,6 +3,9 @@ import cors from "cors";
 import compression from "compression";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
+// sharp is available in the Node runtime but not declared in package.json
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const sharp: any = require("sharp");
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import path from "path";
@@ -950,6 +953,25 @@ app.get("/api/image/status/:taskId", async (req, res) => {
 // ── Freepik: Flux 2 Klein ─────────────────────────────────────────────────────
 // Completely different API from Mystic — sends reference images as input_image
 // through input_image_4, which the model uses for subject/character consistency.
+
+// Helper: resize a base64 image to max 1024px on its longest side.
+// Freepik Klein silently FAILs tasks when input images are too large.
+async function resizeBase64Image(b64: string, maxPx = 1024): Promise<string> {
+  try {
+    const buf = Buffer.from(b64, "base64");
+    const resized = await sharp(buf)
+      .resize(maxPx, maxPx, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+    const result = resized.toString("base64");
+    console.log(`Klein image resize: ${Math.round(buf.length/1024)}KB → ${Math.round(resized.length/1024)}KB`);
+    return result;
+  } catch (e) {
+    console.warn("Klein image resize failed, using original:", e);
+    return b64;
+  }
+}
+
 app.post("/api/image/generate-klein", express.json({ limit: "20mb" }), async (req, res) => {
   const { prompt, aspectRatio, resolution, inputImages, seed, safetyTolerance, outputFormat, apiKey: userApiKey } = req.body;
   if (!prompt) return res.status(400).json({ error: "Prompt is required." });
@@ -967,13 +989,14 @@ app.post("/api/image/generate-klein", express.json({ limit: "20mb" }), async (re
     if (seed !== undefined && seed !== null) body.seed = seed;
     if (outputFormat === 'png' || outputFormat === 'jpeg') body.output_format = outputFormat;
 
-    // Up to 4 reference images as input_image, input_image_2, etc.
+    // Up to 4 reference images — resize each to max 1024px before sending
     const keys = ["input_image", "input_image_2", "input_image_3", "input_image_4"];
     if (Array.isArray(inputImages)) {
-      inputImages.slice(0, 4).forEach((img: string, i: number) => {
-        const b64 = img.includes(",") ? img.split(",")[1] : img;
-        body[keys[i]] = b64;
-      });
+      for (let i = 0; i < Math.min(inputImages.length, 4); i++) {
+        const raw = inputImages[i];
+        const b64 = raw.includes(",") ? raw.split(",")[1] : raw;
+        body[keys[i]] = await resizeBase64Image(b64);
+      }
     }
 
     console.log(`Flux 2 Klein — ${body.resolution}, ratio:${body.aspect_ratio}, refs:${inputImages?.length || 0}, format:${body.output_format || 'default'}, seed:${seed ?? 'random'}, prompt: "${body.prompt.slice(0, 100)}"`);
