@@ -212,6 +212,38 @@ const ImageGeneratorScreen: React.FC = () => {
 
   useEffect(() => { loadLoras(); }, [loadLoras]);
 
+  // ── Blank image detection ─────────────────────────────────────────────────
+  // Freepik silently returns a solid black image when NSFW filter blocks content.
+  // We sample the image pixels and flag it if >95% are near-black.
+  const checkIfBlankImage = async (url: string): Promise<boolean> => {
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject();
+        img.src = url;
+      });
+      const canvas = document.createElement('canvas');
+      // Sample a small version — enough to detect solid black without loading the full res
+      canvas.width = 32; canvas.height = 32;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return false;
+      ctx.drawImage(img, 0, 0, 32, 32);
+      const pixels = ctx.getImageData(0, 0, 32, 32).data;
+      let darkCount = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        const r = pixels[i], g = pixels[i+1], b = pixels[i+2];
+        if (r < 20 && g < 20 && b < 20) darkCount++;
+      }
+      const darkRatio = darkCount / (32 * 32);
+      console.log(`[ImageGen] Blank check: ${Math.round(darkRatio * 100)}% dark pixels`);
+      return darkRatio > 0.95;
+    } catch {
+      return false; // If check fails, assume image is fine
+    }
+  };
+
   // ── Polling helper ────────────────────────────────────────────────────────
   const freepikKeyRef = useRef(freepikApiKey);
   useEffect(() => { freepikKeyRef.current = freepikApiKey; }, [freepikApiKey]);
@@ -255,12 +287,21 @@ const ImageGeneratorScreen: React.FC = () => {
           clearInterval(pollRef.current!); clearTimeout(timeoutRef.current!); pollRef.current = null;
           const urls: string[] = data._imageUrls || data.generated || [];
           if (urls.length > 0) {
-            setResultImages(urls); setJobStatus('succeeded'); setStatusMsg('');
-            urls.forEach((url, i) => addToGallery({
-              id: `generated-${Date.now()}-${i}`, type: 'generated', mediaType: 'image',
-              url, prompt: promptRef.current, timestamp: Date.now(),
-            }));
-            addToast({ title: 'Done!', message: 'Saved to gallery.', type: 'success' });
+            // Check if Freepik returned a black/blank image (NSFW filter silently replaces output)
+            const isBlank = await checkIfBlankImage(urls[0]);
+            if (isBlank) {
+              log('COMPLETED but image is blank/black — likely blocked by NSFW filter');
+              setJobStatus('failed');
+              setStatusMsg('Image was blocked by Freepik\'s content filter. Try a different prompt, or contact Freepik support about API content permissions.');
+              addToast({ title: 'Blocked by content filter', message: 'Freepik returned a blank image. Try rephrasing the prompt.', type: 'error' });
+            } else {
+              setResultImages(urls); setJobStatus('succeeded'); setStatusMsg('');
+              urls.forEach((url, i) => addToGallery({
+                id: `generated-${Date.now()}-${i}`, type: 'generated', mediaType: 'image',
+                url, prompt: promptRef.current, timestamp: Date.now(),
+              }));
+              addToast({ title: 'Done!', message: 'Saved to gallery.', type: 'success' });
+            }
           } else {
             log('COMPLETED but no URLs in response');
             setJobStatus('failed'); setStatusMsg('Task completed but no images returned. May have been filtered for content.');
