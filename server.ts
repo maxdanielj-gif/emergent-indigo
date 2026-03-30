@@ -965,15 +965,15 @@ function getWaveSpeedHeaders(apiKey: string): Record<string, string> {
 // WaveSpeed model registry — image edit models and video models
 const WAVESPEED_MODELS = {
   image: [
-    { id: "wavespeed-ai/qwen-image/edit",                  name: "Qwen Image Edit",              hasLora: false, maxImages: 4 },
-    { id: "wavespeed-ai/qwen-image/edit-lora",             name: "Qwen Image Edit + LoRA",       hasLora: true,  maxImages: 4 },
-    { id: "wavespeed-ai/qwen-image/edit-2511",             name: "Qwen Image Edit 2511",         hasLora: false, maxImages: 4 },
-    { id: "wavespeed-ai/qwen-image/edit-multiple-angles",  name: "Qwen Image Multi-Angle Edit",  hasLora: false, maxImages: 4 },
-    { id: "wavespeed-ai/qwen-image-max/edit",              name: "Qwen Image Max Edit",          hasLora: false, maxImages: 4 },
-    { id: "wavespeed-ai/flux-2-klein-4b/edit",             name: "Flux 2 Klein 4B Edit",         hasLora: false, maxImages: 4 },
-    { id: "wavespeed-ai/flux-2-klein-9b/edit",             name: "Flux 2 Klein 9B Edit",         hasLora: false, maxImages: 4 },
-    { id: "wavespeed-ai/flux-2-klein-9b/edit-lora",        name: "Flux 2 Klein 9B Edit + LoRA",  hasLora: true,  maxImages: 4 },
-    { id: "wavespeed-ai/flux-2-turbo/edit",                name: "Flux 2 Turbo Edit",            hasLora: false, maxImages: 4 },
+    { id: "wavespeed-ai/qwen-image/edit",                  name: "Qwen Image Edit",              hasLora: false, maxImages: 1 },
+    { id: "wavespeed-ai/qwen-image/edit-lora",             name: "Qwen Image Edit + LoRA",       hasLora: true,  maxImages: 1 },
+    { id: "wavespeed-ai/qwen-image/edit-2511",             name: "Qwen Image Edit 2511",         hasLora: false, maxImages: 1 },
+    { id: "wavespeed-ai/qwen-image/edit-multiple-angles",  name: "Qwen Image Multi-Angle Edit",  hasLora: false, maxImages: 3 },
+    { id: "wavespeed-ai/qwen-image-max/edit",              name: "Qwen Image Max Edit",          hasLora: false, maxImages: 1 },
+    { id: "wavespeed-ai/flux-2-klein-4b/edit",             name: "Flux 2 Klein 4B Edit",         hasLora: false, maxImages: 3 },
+    { id: "wavespeed-ai/flux-2-klein-9b/edit",             name: "Flux 2 Klein 9B Edit",         hasLora: false, maxImages: 3 },
+    { id: "wavespeed-ai/flux-2-klein-9b/edit-lora",        name: "Flux 2 Klein 9B Edit + LoRA",  hasLora: true,  maxImages: 3 },
+    { id: "wavespeed-ai/flux-2-turbo/edit",                name: "Flux 2 Turbo Edit",            hasLora: false, maxImages: 3 },
   ],
   video: [
     { id: "wavespeed-ai/wan-2.2-spicy/image-to-video",      name: "WAN 2.2 Spicy Image→Video",        hasLora: false },
@@ -1011,9 +1011,19 @@ app.post("/api/wavespeed/generate", express.json({ limit: "20mb" }), async (req,
     // Size (width x height) — optional, defaults to input image size
     if (size) body.size = size;
 
-    // Images — array of URLs or base64 data URIs
+    // Images — model-specific field names:
+    // Qwen models use "image" (singular string, first image only)
+    // Flux/other models use "images" (array, max 3)
     if (Array.isArray(images) && images.length > 0) {
-      body.images = images.filter(Boolean);
+      const cleanImages = images.filter(Boolean);
+      const isQwen = model.includes('qwen-image');
+      if (isQwen) {
+        // Qwen edit models want "image" as a single string
+        body.image = cleanImages[0];
+      } else {
+        // Flux Klein, Turbo, etc. want "images" array, max 3
+        body.images = cleanImages.slice(0, 3);
+      }
     }
 
     // LoRAs — array of { path, scale }
@@ -1052,7 +1062,7 @@ app.post("/api/wavespeed/generate", express.json({ limit: "20mb" }), async (req,
 
 // Poll WaveSpeed task result (works for both image and video tasks)
 app.get("/api/wavespeed/status/:taskId", async (req, res) => {
-  const apiKey = (req.query.api_key as string) || process.env.WAVESPEED_API_KEY;
+  const apiKey = (req.query.ws_api_key as string) || (req.query.api_key as string) || process.env.WAVESPEED_API_KEY;
   if (!apiKey) return res.status(400).json({ error: "WaveSpeed API key not configured." });
 
   try {
