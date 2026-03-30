@@ -19,15 +19,15 @@ type Provider = 'freepik' | 'wavespeed';
 type WsModelType = 'image' | 'video';
 interface WsModel { id: string; name: string; hasLora: boolean; maxImages?: number; }
 const WS_IMAGE_MODELS_FALLBACK: WsModel[] = [
-  { id: 'wavespeed-ai/qwen-image/edit',                  name: 'Qwen Image Edit',              hasLora: false, maxImages: 4 },
-  { id: 'wavespeed-ai/qwen-image/edit-lora',             name: 'Qwen Image Edit + LoRA',       hasLora: true,  maxImages: 4 },
-  { id: 'wavespeed-ai/qwen-image/edit-2511',             name: 'Qwen Image Edit 2511',         hasLora: false, maxImages: 4 },
-  { id: 'wavespeed-ai/qwen-image/edit-multiple-angles',  name: 'Qwen Image Multi-Angle Edit',  hasLora: false, maxImages: 4 },
-  { id: 'wavespeed-ai/qwen-image-max/edit',              name: 'Qwen Image Max Edit',          hasLora: false, maxImages: 4 },
-  { id: 'wavespeed-ai/flux-2-klein-4b/edit',             name: 'Flux 2 Klein 4B Edit',         hasLora: false, maxImages: 4 },
-  { id: 'wavespeed-ai/flux-2-klein-9b/edit',             name: 'Flux 2 Klein 9B Edit',         hasLora: false, maxImages: 4 },
-  { id: 'wavespeed-ai/flux-2-klein-9b/edit-lora',        name: 'Flux 2 Klein 9B Edit + LoRA',  hasLora: true,  maxImages: 4 },
-  { id: 'wavespeed-ai/flux-2-turbo/edit',                name: 'Flux 2 Turbo Edit',            hasLora: false, maxImages: 4 },
+  { id: 'wavespeed-ai/qwen-image/edit',                  name: 'Qwen Image Edit',              hasLora: false, maxImages: 1 },
+  { id: 'wavespeed-ai/qwen-image/edit-lora',             name: 'Qwen Image Edit + LoRA',       hasLora: true,  maxImages: 1 },
+  { id: 'wavespeed-ai/qwen-image/edit-2511',             name: 'Qwen Image Edit 2511',         hasLora: false, maxImages: 1 },
+  { id: 'wavespeed-ai/qwen-image/edit-multiple-angles',  name: 'Qwen Image Multi-Angle Edit',  hasLora: false, maxImages: 3 },
+  { id: 'wavespeed-ai/qwen-image-max/edit',              name: 'Qwen Image Max Edit',          hasLora: false, maxImages: 1 },
+  { id: 'wavespeed-ai/flux-2-klein-4b/edit',             name: 'Flux 2 Klein 4B Edit',         hasLora: false, maxImages: 3 },
+  { id: 'wavespeed-ai/flux-2-klein-9b/edit',             name: 'Flux 2 Klein 9B Edit',         hasLora: false, maxImages: 3 },
+  { id: 'wavespeed-ai/flux-2-klein-9b/edit-lora',        name: 'Flux 2 Klein 9B Edit + LoRA',  hasLora: true,  maxImages: 3 },
+  { id: 'wavespeed-ai/flux-2-turbo/edit',                name: 'Flux 2 Turbo Edit',            hasLora: false, maxImages: 3 },
 ];
 const WS_VIDEO_MODELS_FALLBACK: WsModel[] = [
   { id: 'wavespeed-ai/wan-2.2-spicy/image-to-video',      name: 'WAN 2.2 Spicy Image to Video',        hasLora: false },
@@ -278,6 +278,8 @@ const ImageGeneratorScreen: React.FC = () => {
   // ── Polling helper ────────────────────────────────────────────────────────
   const freepikKeyRef = useRef(freepikApiKey);
   useEffect(() => { freepikKeyRef.current = freepikApiKey; }, [freepikApiKey]);
+  const wavespeedKeyRef = useRef(wavespeedApiKey);
+  useEffect(() => { wavespeedKeyRef.current = wavespeedApiKey; }, [wavespeedApiKey]);
 
   const startPolling = (taskId: string, statusEndpoint: string) => {
     if (pollRef.current)    clearInterval(pollRef.current);
@@ -288,10 +290,19 @@ const ImageGeneratorScreen: React.FC = () => {
 
     log(`Polling started — taskId: ${taskId}`);
 
+    // Determine which API key to pass based on the endpoint
+    const isWaveSpeed = statusEndpoint.includes('wavespeed');
+
     pollRef.current = setInterval(async () => {
       try {
-        const key = freepikKeyRef.current || '';
-        const url = `${statusEndpoint}/${taskId}?api_key=${encodeURIComponent(key)}`;
+        let url: string;
+        if (isWaveSpeed) {
+          const wsKey = wavespeedKeyRef.current || '';
+          url = `${statusEndpoint}/${taskId}?ws_api_key=${encodeURIComponent(wsKey)}`;
+        } else {
+          const fpKey = freepikKeyRef.current || '';
+          url = `${statusEndpoint}/${taskId}?api_key=${encodeURIComponent(fpKey)}`;
+        }
         const r = await fetch(url);
 
         if (!r.ok) {
