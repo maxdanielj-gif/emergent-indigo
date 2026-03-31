@@ -89,13 +89,21 @@ const ChatManager: React.FC = () => {
 
   const getIntervalMs = (freq: string) => {
     switch (freq) {
-      case '1h':  return 1  * 60 * 60 * 1000;
-      case '6h':  return 6  * 60 * 60 * 1000;
-      case '12h': return 12 * 60 * 60 * 1000;
-      case '24h': return 24 * 60 * 60 * 1000;
-      case 'low':    return 15 * 60 * 1000;
-      case 'medium': return  5 * 60 * 1000;
-      case 'high':   return  2 * 60 * 1000;
+      // Proactive message intervals
+      case '2h':  return 2  * 60 * 60 * 1000;
+      case '3h':  return 3  * 60 * 60 * 1000;
+      case '5h':  return 5  * 60 * 60 * 1000;
+      case '11h': return 11 * 60 * 60 * 1000;
+      // Legacy values (in case old settings are stored)
+      case '1h':  return 2  * 60 * 60 * 1000;
+      case '6h':  return 5  * 60 * 60 * 1000;
+      case '12h': return 11 * 60 * 60 * 1000;
+      case '24h': return 11 * 60 * 60 * 1000;
+      // Ambient mode intervals
+      case '15m': return 15 * 60 * 1000;
+      case '30m': return 30 * 60 * 1000;
+      case '45m': return 45 * 60 * 1000;
+      case '60m': return 60 * 60 * 1000;
       default: return Infinity;
     }
   };
@@ -116,7 +124,7 @@ const ChatManager: React.FC = () => {
 
       if (
         sinceInteraction >= interval &&
-        sinceSession     >= 60 * 60 * 1000 && // app open for at least 1 hour
+        sinceSession     >= 2 * 60 * 1000 && // app open for at least 2 minutes
         sinceTrigger     >= interval &&
         hasUserMsg
       ) {
@@ -179,7 +187,7 @@ const ChatManager: React.FC = () => {
       const hasUserMsg = chatHistoryRef.current.some(m => m.role === 'user');
 
       if (
-        sinceSession >= interval &&
+        sinceSession >= 60 * 1000 &&    // app open for at least 1 minute
         sinceTrigger >= interval &&
         sinceLastMsg >= 30000 &&        // at least 30s since last interaction
         sinceLastMsg <  proactiveMs &&  // but not so long it should be proactive
