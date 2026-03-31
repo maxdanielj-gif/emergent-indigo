@@ -19,7 +19,7 @@ async def proxy_api(request: Request, path: str):
     headers = {
         k: v
         for k, v in request.headers.items()
-        if k.lower() not in ("host", "content-length", "transfer-encoding", "connection")
+        if k.lower() not in ("host", "content-length", "transfer-encoding", "connection", "accept-encoding")
     }
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
