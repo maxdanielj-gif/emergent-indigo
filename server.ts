@@ -562,31 +562,83 @@ app.post("/api/tts/elevenlabs", express.json(), async (req, res) => {
   }
 });
 
-// ── ElevenLabs: list voices (v2 with search/filter/sort) ─────────────────────
+// ── ElevenLabs: list voices (v1 = user voices, v2 = library search) ──────────
 app.get("/api/tts/elevenlabs/voices", async (req, res) => {
   const apiKey = (req.query.api_key as string) || process.env.ELEVENLABS_API_KEY;
   if (!apiKey) return res.status(400).json({ error: "ElevenLabs API key not configured" });
 
   try {
-    const params = new URLSearchParams();
-    params.set("page_size", "100");
-    params.set("include_total_count", "false");
-    if (req.query.search)         params.set("search",         req.query.search as string);
-    if (req.query.sort)           params.set("sort",           req.query.sort as string);
-    if (req.query.sort_direction) params.set("sort_direction", req.query.sort_direction as string);
-    if (req.query.voice_type)     params.set("voice_type",     req.query.voice_type as string);
-    if (req.query.category)       params.set("category",       req.query.category as string);
+    const search        = (req.query.search         as string) || "";
+    const sort          = (req.query.sort            as string) || "name";
+    const sortDir       = (req.query.sort_direction  as string) || "asc";
+    const voiceType     = (req.query.voice_type      as string) || "";
+    const category      = (req.query.category        as string) || "";
 
-    const response = await fetch(`https://api.elevenlabs.io/v2/voices?${params.toString()}`, {
+    // ── Primary: /v1/voices gives all voices the user has access to ──────────
+    // (pre-made + cloned + generated). More stable than v2 library search.
+    const v1Resp = await fetch("https://api.elevenlabs.io/v1/voices", {
       headers: { "xi-api-key": apiKey },
     });
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(response.status).json({ error: errText });
+
+    let allVoices: any[] = [];
+
+    if (v1Resp.ok) {
+      const v1Data = await v1Resp.json();
+      allVoices = Array.isArray(v1Data.voices) ? v1Data.voices : [];
+    } else {
+      // Propagate auth / other errors with clean message
+      let errMsg = "Invalid ElevenLabs API key. Check it in Settings.";
+      try {
+        const errData = await v1Resp.json();
+        if (errData?.detail?.message) errMsg = `ElevenLabs: ${errData.detail.message}`;
+      } catch {}
+      return res.status(v1Resp.status).json({ error: errMsg });
     }
-    const data = await response.json();
-    res.json(data);
+
+    // ── Optional secondary: v2 library search for community voices ───────────
+    // Only do this if the request asks for community voices or has a search term
+    const wantLibrary = voiceType === "community" || (search && voiceType !== "personal");
+    if (wantLibrary && allVoices.length === 0) {
+      try {
+        const params = new URLSearchParams({ page_size: "100", include_total_count: "false" });
+        if (search)   params.set("search",         search);
+        if (sort)     params.set("sort",            sort);
+        if (sortDir)  params.set("sort_direction",  sortDir);
+        if (voiceType)params.set("voice_type",      voiceType);
+        if (category) params.set("category",        category);
+
+        const v2Resp = await fetch(`https://api.elevenlabs.io/v2/voices?${params.toString()}`, {
+          headers: { "xi-api-key": apiKey },
+        });
+        if (v2Resp.ok) {
+          const v2Data = await v2Resp.json();
+          allVoices = Array.isArray(v2Data.voices) ? v2Data.voices : allVoices;
+        }
+      } catch { /* v2 is best-effort */ }
+    }
+
+    // ── Apply client-side filters on the v1 result ───────────────────────────
+    let voices = allVoices;
+    if (search)    voices = voices.filter((v: any) => v.name?.toLowerCase().includes(search.toLowerCase()) || v.description?.toLowerCase().includes(search.toLowerCase()));
+    if (category)  voices = voices.filter((v: any) => v.category === category);
+    if (voiceType === "personal")  voices = voices.filter((v: any) => v.category !== "premade");
+    if (voiceType === "default")   voices = voices.filter((v: any) => v.category === "premade");
+
+    // ── Sort ─────────────────────────────────────────────────────────────────
+    voices = voices.sort((a: any, b: any) => {
+      if (sort === "name") {
+        return sortDir === "asc" ? (a.name || "").localeCompare(b.name || "") : (b.name || "").localeCompare(a.name || "");
+      }
+      if (sort === "created_at_unix") {
+        return sortDir === "asc" ? (a.created_at_unix || 0) - (b.created_at_unix || 0) : (b.created_at_unix || 0) - (a.created_at_unix || 0);
+      }
+      return 0;
+    });
+
+    console.log(`ElevenLabs voices: returned ${voices.length} voices (v1 primary)`);
+    res.json({ voices });
   } catch (e: any) {
+    console.error("ElevenLabs voices error:", e);
     res.status(500).json({ error: e.message || "Failed to fetch ElevenLabs voices" });
   }
 });
