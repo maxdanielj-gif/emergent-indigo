@@ -26,10 +26,10 @@ export default defineConfig(({mode}) => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
-      port: 3000, // Ensure Vite uses the same port as Express in development
-      strictPort: true, // Fail if port 3000 is already in use
+      port: 3000,
+      strictPort: true,
+      allowedHosts: true,
     },
   };
 });

@@ -1,0 +1,8 @@
+{
+  "name": "indigo-ai-launcher",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "bash /app/frontend/start.sh"
+  }
+}
