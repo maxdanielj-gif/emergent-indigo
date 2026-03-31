@@ -629,8 +629,9 @@ const ImageGeneratorScreen: React.FC = () => {
         </div>
       )}
       {provider === 'stability' && !stabilityApiKey && (
-        <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-sm text-amber-700 dark:text-amber-300">
-          Add your Stability AI API key in Settings. Get one at{' '}
+        <div className="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl text-sm text-blue-700 dark:text-blue-300">
+          To use your own Stability AI key add it in Settings — otherwise the app uses the server key.
+          Get your own key at{' '}
           <a href="https://platform.stability.ai/account/keys" target="_blank" rel="noreferrer" className="underline font-medium">platform.stability.ai</a>.
         </div>
       )}
