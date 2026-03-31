@@ -17,54 +17,14 @@ const GalleryItemCard: React.FC<{
     activeTab: string;
     timeZone: string;
 }> = ({ item, mediaType, isSelectionMode, selectedIds, toggleSelectImage, setSelectedItem, handleDelete, handleCopyPrompt, activeTab, timeZone }) => {
-    const [videoUrl, setVideoUrl] = useState<string | null>(null);
-
-    useEffect(() => {
-        let currentUrl: string | null = null;
-        
-        const convertToBlob = async () => {
-            if (mediaType === 'video' && item.url.startsWith('data:')) {
-                try {
-                    const response = await fetch(item.url);
-                    const blob = await response.blob();
-                    currentUrl = URL.createObjectURL(blob);
-                    setVideoUrl(currentUrl);
-                } catch (err) {
-                    console.error("Failed to convert data URL to blob URL in gallery card", err);
-                    setVideoUrl(item.url);
-                }
-            } else {
-                setVideoUrl(item.url);
-            }
-        };
-
-        convertToBlob();
-
-        return () => {
-            if (currentUrl && currentUrl.startsWith('blob:')) {
-                URL.revokeObjectURL(currentUrl);
-            }
-        };
-    }, [item.url, mediaType]);
 
     return (
         <div className={`bg-gray-100 dark:bg-indigo-800 rounded-lg shadow-sm hover:shadow-md transition-all flex flex-col group relative border-2 ${selectedIds.includes(item.id) ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-transparent'}`}>
             <div 
                 className="aspect-square overflow-hidden rounded-t-lg cursor-pointer relative"
-                onClick={() => isSelectionMode ? toggleSelectImage(item.id) : setSelectedItem({ url: item.url, mediaType, prompt: item.prompt })}
+                onClick={() => isSelectionMode ? toggleSelectImage(item.id) : setSelectedItem({ url: item.url, prompt: item.prompt })}
             >
-                {mediaType === 'video' ? (
-                    <div className="w-full h-full relative">
-                        <video src={videoUrl || item.url} className="w-full h-full object-cover" muted />
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                            <div className="w-12 h-12 bg-white/30 backdrop-blur-sm rounded-full flex items-center justify-center">
-                                <div className="w-0 h-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-white border-b-[8px] border-b-transparent ml-1"></div>
-                            </div>
-                        </div>
-                    </div>
-                ) : (
-                    <img src={item.url} alt="Gallery Item" className="w-full h-full object-cover" loading="lazy" />
-                )}
+                <img src={item.url} alt="Gallery Item" className="w-full h-full object-cover" loading="lazy" />
                 
                 {isSelectionMode ? (
                     <div className="absolute top-2 right-2 p-1 bg-white dark:bg-indigo-900 rounded-full shadow-md">
@@ -83,8 +43,8 @@ const GalleryItemCard: React.FC<{
             
             <div className="flex items-center justify-center space-x-4 p-3 bg-gray-50 dark:bg-indigo-950 border-t border-gray-200 dark:border-indigo-700">
                 <a 
-                    href={videoUrl || item.url} 
-                    download={`${activeTab}-${item.id}.${mediaType === 'video' ? 'mp4' : 'png'}`}
+                    href={item.url} 
+                    download={`${activeTab}-${item.id}.png`}
                     className="p-3 bg-white dark:bg-indigo-900 text-gray-800 dark:text-indigo-100 rounded-full hover:bg-gray-100 dark:hover:bg-indigo-800 transition-colors shadow-sm min-h-[44px] min-w-[44px] flex items-center justify-center" 
                     title="Download"
                 >
@@ -675,32 +635,6 @@ const GalleryScreen: React.FC = () => {
                   Uploaded
               </button>
           </div>
-          <div className="flex space-x-1 bg-gray-100 dark:bg-indigo-800 p-1 rounded-lg">
-              <button
-                  onClick={() => setMediaFilter('all')}
-                  className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors min-h-[36px] ${
-                      mediaFilter === 'all' ? 'bg-white dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-indigo-400 hover:text-gray-700 dark:hover:text-indigo-200'
-                  }`}
-              >
-                  All
-              </button>
-              <button
-                  onClick={() => setMediaFilter('image')}
-                  className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors min-h-[36px] ${
-                      mediaFilter === 'image' ? 'bg-white dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-indigo-400 hover:text-gray-700 dark:hover:text-indigo-200'
-                  }`}
-              >
-                  Images
-              </button>
-              <button
-                  onClick={() => setMediaFilter('video')}
-                  className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors min-h-[36px] ${
-                      mediaFilter === 'video' ? 'bg-white dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-indigo-400 hover:text-gray-700 dark:hover:text-indigo-200'
-                  }`}
-              >
-                  Videos
-              </button>
-          </div>
         </div>
       </div>
 
@@ -756,63 +690,6 @@ const GalleryScreen: React.FC = () => {
                       className="flex items-center px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors text-xs font-bold min-h-[36px] disabled:opacity-50"
                   >
                       {activeOp === 'drive_restore_image' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CloudDownload className="w-4 h-4 mr-1.5" />}
-                      Drive Download
-                  </button>
-                </>
-              )}
-          </div>
-        </div>
-
-        {/* Videos Backup */}
-        <div className="p-4 bg-purple-50 dark:bg-purple-900 rounded-xl border border-purple-100 dark:border-purple-700 flex flex-col lg:flex-row items-center justify-between gap-4">
-          <div className="flex items-center w-full lg:w-auto">
-              <Package className="w-6 h-6 text-purple-600 mr-3 shrink-0" />
-              <div>
-                  <h3 className="text-sm font-bold text-purple-900 dark:text-purple-100">Video Backups</h3>
-                  <p className="text-[10px] text-purple-700 dark:text-purple-200">Backup and restore only video files.</p>
-              </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-center lg:justify-end gap-2 w-full lg:w-auto">
-              <button
-                  onClick={() => handleDownloadGalleryBackup('video')}
-                  disabled={isBackingUp}
-                  className="flex items-center px-3 py-1.5 bg-white dark:bg-purple-900 text-purple-700 dark:text-purple-200 border border-purple-200 dark:border-purple-700 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-800 transition-colors text-xs font-bold min-h-[36px] disabled:opacity-50"
-              >
-                  {activeOp === 'download_video' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Download className="w-4 h-4 mr-1.5" />}
-                  ZIP Download
-              </button>
-              <button
-                  onClick={() => handleCloudSync('video')}
-                  disabled={isBackingUp}
-                  className="flex items-center px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs font-bold min-h-[36px] disabled:bg-blue-400"
-              >
-                  {activeOp === 'cloud_sync_video' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CloudUpload className="w-4 h-4 mr-1.5" />}
-                  Cloud Upload
-              </button>
-              <button
-                  onClick={() => handleCloudRestore('video')}
-                  disabled={isBackingUp}
-                  className="flex items-center px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-xs font-bold min-h-[36px] disabled:opacity-50"
-              >
-                  {activeOp === 'cloud_restore_video' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CloudDownload className="w-4 h-4 mr-1.5" />}
-                  Cloud Download
-              </button>
-              {isGoogleDriveConnected && (
-                <>
-                  <button
-                      onClick={() => handleBackupToDrive('video')}
-                      disabled={isBackingUp}
-                      className="flex items-center px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs font-bold min-h-[36px] disabled:bg-purple-400"
-                  >
-                      {activeOp === 'drive_video' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CloudUpload className="w-4 h-4 mr-1.5" />}
-                      Drive Upload
-                  </button>
-                  <button
-                      onClick={() => handleDriveRestore('video')}
-                      disabled={isBackingUp}
-                      className="flex items-center px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors text-xs font-bold min-h-[36px] disabled:opacity-50"
-                  >
-                      {activeOp === 'drive_restore_video' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CloudDownload className="w-4 h-4 mr-1.5" />}
                       Drive Download
                   </button>
                 </>

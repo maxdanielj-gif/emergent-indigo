@@ -5,7 +5,6 @@ import { useApp } from '../context/AppContext';
 const UserProfileScreen: React.FC = () => {
   const { userProfile, setUserProfile, setUserReferenceImage, addToast } = useApp();
   const [name, setName] = useState(userProfile.name);
-  const [email, setEmail] = useState(userProfile.email || '');
   const [info, setInfo] = useState(userProfile.info);
   const [preferences, setPreferences] = useState(userProfile.preferences);
   const [appearance, setAppearance] = useState(userProfile.appearance);
@@ -38,7 +37,6 @@ const UserProfileScreen: React.FC = () => {
     setUserProfile({
       ...userProfile,
       name,
-      email,
       info,
       preferences,
       appearance,
@@ -74,18 +72,6 @@ const UserProfileScreen: React.FC = () => {
             onChange={(e) => setName(e.target.value)}
             className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
           />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            placeholder="your@email.com"
-          />
-          <p className="text-xs text-gray-500 mt-1">Used by the AI to send you proactive messages and summaries.</p>
         </div>
 
         <div>

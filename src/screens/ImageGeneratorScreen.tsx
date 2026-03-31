@@ -11,29 +11,13 @@ import {
 // Provider choices (top-level: Freepik Mystic vs WaveSpeed)
 const PROVIDERS = [
   { label: 'Freepik Mystic — Ultra-realistic, LoRA support', value: 'freepik' },
-  { label: 'WaveSpeed — 700+ models, image editing, video', value: 'wavespeed' },
+  { label: 'WaveSpeed — Flux 2 Klein 9B image editing', value: 'wavespeed' },
 ] as const;
 type Provider = 'freepik' | 'wavespeed';
 
-// WaveSpeed model categories
-type WsModelType = 'image' | 'video';
-interface WsModel { id: string; name: string; hasLora: boolean; maxImages?: number; }
-const WS_IMAGE_MODELS_FALLBACK: WsModel[] = [
-  { id: 'wavespeed-ai/qwen-image/edit',                  name: 'Qwen Image Edit',              hasLora: false, maxImages: 1 },
-  { id: 'wavespeed-ai/qwen-image/edit-lora',             name: 'Qwen Image Edit + LoRA',       hasLora: true,  maxImages: 1 },
-  { id: 'wavespeed-ai/qwen-image/edit-2511',             name: 'Qwen Image Edit 2511',         hasLora: false, maxImages: 1 },
-  { id: 'wavespeed-ai/qwen-image/edit-multiple-angles',  name: 'Qwen Image Multi-Angle Edit',  hasLora: false, maxImages: 3 },
-  { id: 'wavespeed-ai/qwen-image-max/edit',              name: 'Qwen Image Max Edit',          hasLora: false, maxImages: 1 },
-  { id: 'wavespeed-ai/flux-2-klein-4b/edit',             name: 'Flux 2 Klein 4B Edit',         hasLora: false, maxImages: 3 },
-  { id: 'wavespeed-ai/flux-2-klein-9b/edit',             name: 'Flux 2 Klein 9B Edit',         hasLora: false, maxImages: 3 },
-  { id: 'wavespeed-ai/flux-2-klein-9b/edit-lora',        name: 'Flux 2 Klein 9B Edit + LoRA',  hasLora: true,  maxImages: 3 },
-  { id: 'wavespeed-ai/flux-2-turbo/edit',                name: 'Flux 2 Turbo Edit',            hasLora: false, maxImages: 3 },
-];
-const WS_VIDEO_MODELS_FALLBACK: WsModel[] = [
-  { id: 'wavespeed-ai/wan-2.2-spicy/image-to-video',      name: 'WAN 2.2 Spicy Image to Video',        hasLora: false },
-  { id: 'wavespeed-ai/wan-2.2-spicy/image-to-video-lora', name: 'WAN 2.2 Spicy Image to Video + LoRA', hasLora: true  },
-  { id: 'wavespeed-ai/wan-2.2-spicy/video-extend-lora',   name: 'WAN 2.2 Spicy Video Extend + LoRA',   hasLora: true  },
-];
+// WaveSpeed uses a single model — Flux 2 Klein 9B Edit
+const WS_MODEL_ID = 'wavespeed-ai/flux-2-klein-9b/edit';
+const WS_MAX_IMAGES = 3;
 
 // Mystic aspect ratios — full list from API docs
 const ASPECT_RATIOS_MYSTIC = [
@@ -172,14 +156,9 @@ const ImageGeneratorScreen: React.FC = () => {
   const [selectedLoraStyles,setSelectedLoraStyles]= useState<{name:string;strength:number}[]>([]);
 
   // ── WaveSpeed-specific state ──────────────────────────────────────────────
-  const [wsModelType,       setWsModelType]       = useState<WsModelType>('image');
-  const [wsModels,          setWsModels]          = useState<{image: WsModel[]; video: WsModel[]}>({ image: [], video: [] });
-  const [wsModelsLoaded,    setWsModelsLoaded]    = useState(false);
-  const [wsSelectedModel,   setWsSelectedModel]   = useState('');
-  const [wsImages,          setWsImages]          = useState<(string|null)[]>([null, null, null, null]);
+  const [wsImages,          setWsImages]          = useState<(string|null)[]>([null, null, null]);
   const [wsSlot0Cleared,    setWsSlot0Cleared]    = useState(false);
   const [wsSeed,            setWsSeed]            = useState('');
-  const [wsLoras,           setWsLoras]           = useState<{path:string;scale:number}[]>([]);
   const [wsSize,            setWsSize]            = useState('');
 
   // ── LoRA state (shared) ───────────────────────────────────────────────────
@@ -224,24 +203,6 @@ const ImageGeneratorScreen: React.FC = () => {
   }, [freepikApiKey, lorasLoaded]);
 
   useEffect(() => { loadLoras(); }, [loadLoras]);
-
-  // Load WaveSpeed models from backend
-  useEffect(() => {
-    if (wsModelsLoaded) return;
-    fetch('/api/wavespeed/models')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) {
-          setWsModels(data);
-          // Default to first image model
-          if (data.image?.length > 0 && !wsSelectedModel) {
-            setWsSelectedModel(data.image[0].id);
-          }
-          setWsModelsLoaded(true);
-        }
-      })
-      .catch(() => {});
-  }, [wsModelsLoaded, wsSelectedModel]);
 
   // ── Blank image detection ─────────────────────────────────────────────────
   // Freepik silently returns a solid black image when NSFW filter blocks content.
@@ -338,10 +299,38 @@ const ImageGeneratorScreen: React.FC = () => {
               addToast({ title: 'Blocked by content filter', message: 'Freepik returned a blank image. Try rephrasing the prompt.', type: 'error' });
             } else {
               setResultImages(urls); setJobStatus('succeeded'); setStatusMsg('');
-              urls.forEach((url, i) => addToGallery({
-                id: `generated-${Date.now()}-${i}`, type: 'generated', mediaType: 'image',
-                url, prompt: promptRef.current, timestamp: Date.now(),
-              }));
+              // Convert remote URLs to base64 data URIs before saving to gallery
+              // so images persist even after the provider's temporary URLs expire
+              for (let i = 0; i < urls.length; i++) {
+                const originalUrl = urls[i];
+                let savedUrl = originalUrl;
+                try {
+                  if (originalUrl.startsWith('http')) {
+                    const imgEl = new Image();
+                    imgEl.crossOrigin = 'anonymous';
+                    await new Promise<void>((resolve, reject) => {
+                      imgEl.onload = () => resolve();
+                      imgEl.onerror = () => reject(new Error('load failed'));
+                      imgEl.src = originalUrl;
+                    });
+                    const cvs = document.createElement('canvas');
+                    cvs.width = imgEl.naturalWidth;
+                    cvs.height = imgEl.naturalHeight;
+                    const cx = cvs.getContext('2d');
+                    if (cx) {
+                      cx.drawImage(imgEl, 0, 0);
+                      savedUrl = cvs.toDataURL('image/png');
+                      log(`Converted image ${i} to base64 (${Math.round(savedUrl.length/1024)}KB)`);
+                    }
+                  }
+                } catch (err) {
+                  log(`Could not convert image ${i} to base64, saving URL directly`);
+                }
+                addToGallery({
+                  id: `generated-${Date.now()}-${i}`, type: 'generated', mediaType: 'image',
+                  url: savedUrl, prompt: promptRef.current, timestamp: Date.now(),
+                });
+              }
               addToast({ title: 'Done!', message: 'Saved to gallery.', type: 'success' });
             }
           } else {
@@ -412,7 +401,7 @@ const ImageGeneratorScreen: React.FC = () => {
         }).filter(Boolean) as string[];
 
         const body: any = {
-          model: wsSelectedModel,
+          model: WS_MODEL_ID,
           prompt: finalPrompt,
           images: resolvedImages,
           seed: wsSeed.trim() || undefined,
@@ -422,17 +411,13 @@ const ImageGeneratorScreen: React.FC = () => {
         // Size (optional)
         if (wsSize.trim()) body.size = wsSize.trim();
 
-        // LoRAs (for LoRA-enabled models)
-        const activeWsLoras = wsLoras.filter(l => l.path.trim());
-        if (activeWsLoras.length > 0) body.loras = activeWsLoras;
-
         const r = await fetch('/api/wavespeed/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
         if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Failed'); }
         const result = await r.json();
         const taskId = result.taskId;
         if (!taskId) throw new Error(`No task ID returned. Response: ${JSON.stringify(result)}`);
-        console.log(`[ImageGen WaveSpeed] Task created: ${taskId}, model: ${wsSelectedModel}, refs: ${resolvedImages.length}`);
-        setJobStatus('waiting'); setStatusMsg(`Generating with WaveSpeed…`);
+        console.log(`[ImageGen WaveSpeed] Task created: ${taskId}, refs: ${resolvedImages.length}`);
+        setJobStatus('waiting'); setStatusMsg('Generating with Flux 2 Klein 9B…');
         startPolling(taskId, '/api/wavespeed/status');
 
       // ── Freepik Mystic ────────────────────────────────────────────────
@@ -558,11 +543,6 @@ const ImageGeneratorScreen: React.FC = () => {
   const renderLorasBlocked = renderUsingRefs || !(renderSelectedModel?.loraOk ?? true);
   const aspectRatios = ASPECT_RATIOS_MYSTIC;
 
-  // Get the currently selected WaveSpeed model info
-  const allWsModels = [...(wsModels.image || []), ...(wsModels.video || [])];
-  const currentWsModel = allWsModels.find(m => m.id === wsSelectedModel);
-  const wsModelHasLora = currentWsModel?.hasLora ?? false;
-
   const downloadImage = (url: string, i: number) => {
     const a = document.createElement('a');
     a.href = url; a.download = `indigo-image-${Date.now()}-${i}.png`; a.target = '_blank'; a.click();
@@ -616,7 +596,7 @@ const ImageGeneratorScreen: React.FC = () => {
           </div>
           {provider === 'wavespeed' && (
             <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-2">
-              WaveSpeed offers 700+ AI models including Flux 2 Klein, Qwen Image, and WAN video models. Select a model below, upload reference images, and optionally attach LoRA adapters.
+              Flux 2 Klein 9B sends your reference photos directly as subject guides for better character face consistency. Upload up to 3 images and describe the edit you want.
             </p>
           )}
         </div>
@@ -704,45 +684,17 @@ const ImageGeneratorScreen: React.FC = () => {
           </div>
           )}
 
-          {/* ── WAVESPEED: Model selector + image slots ── */}
+          {/* ── WAVESPEED: Flux 2 Klein 9B Edit — image slots ── */}
           {provider === 'wavespeed' && (
           <div className="space-y-3">
-            {/* Model type toggle + model dropdown */}
-            <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
-              <p className="text-sm font-semibold text-indigo-800 dark:text-indigo-200">WaveSpeed Model</p>
-              <div className="flex gap-2">
-                {(['image', 'video'] as WsModelType[]).map(t => (
-                  <button key={t} onClick={() => {
-                    setWsModelType(t);
-                    const models = t === 'image'
-                      ? (wsModels.image.length ? wsModels.image : WS_IMAGE_MODELS_FALLBACK)
-                      : (wsModels.video.length ? wsModels.video : WS_VIDEO_MODELS_FALLBACK);
-                    if (models.length > 0) setWsSelectedModel(models[0].id);
-                  }}
-                    className={`flex-1 py-2 rounded-xl border text-xs font-medium transition-colors ${wsModelType === t ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-800/60 text-indigo-700 dark:text-indigo-200' : 'border-indigo-200 dark:border-indigo-700 text-indigo-500 hover:border-indigo-400'}`}>
-                    {t === 'image' ? 'Image Edit' : 'Video'}
-                  </button>
-                ))}
-              </div>
-              <select value={wsSelectedModel} onChange={e => setWsSelectedModel(e.target.value)}
-                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
-                {(wsModelType === 'image'
-                  ? (wsModels.image.length ? wsModels.image : WS_IMAGE_MODELS_FALLBACK)
-                  : (wsModels.video.length ? wsModels.video : WS_VIDEO_MODELS_FALLBACK)
-                ).map(m => (
-                  <option key={m.id} value={m.id}>{m.name}{m.hasLora ? ' (LoRA)' : ''}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Reference images — 4 upload slots */}
+            {/* Reference images — 3 upload slots */}
             <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
             <div>
               <p className="text-sm font-semibold text-indigo-800 dark:text-indigo-200">Reference Images</p>
-              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-0.5">Up to 4 images — the model uses all of them together to guide editing, style, and character appearance.</p>
+              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-0.5">Up to 3 images — the model uses them to guide editing, style, and character appearance.</p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              {([0,1,2,3] as const).map(i => {
+            <div className="grid grid-cols-3 gap-3">
+              {([0,1,2] as const).map(i => {
                 const label = `Image ${i+1}`;
                 const val = wsImages[i];
                 const setVal = (v: string | null) => setWsImages(prev => { const n=[...prev]; n[i]=v; return n; });
@@ -867,38 +819,6 @@ const ImageGeneratorScreen: React.FC = () => {
                   <p className="text-[10px] text-indigo-400 mt-0.5">Leave empty to match input image size.</p>
                 </div>
               </div>
-              {/* LoRA URLs — only for LoRA-enabled models */}
-              {(() => {
-                const activeModels = wsModelType === 'image' ? (wsModels.image.length ? wsModels.image : WS_IMAGE_MODELS_FALLBACK) : (wsModels.video.length ? wsModels.video : WS_VIDEO_MODELS_FALLBACK);
-                const selectedWsModel = activeModels.find(m => m.id === wsSelectedModel);
-                if (!selectedWsModel?.hasLora) return null;
-                return (
-                  <div>
-                    <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">
-                      LoRA Adapters <span className="font-normal text-indigo-400">(up to 3)</span>
-                    </p>
-                    <p className="text-[10px] text-indigo-400 mb-2">Paste LoRA URLs from HuggingFace or Civitai (.safetensors files)</p>
-                    {wsLoras.map((lora, idx) => (
-                      <div key={idx} className="flex gap-2 mb-2">
-                        <input type="text" value={lora.path} placeholder="https://huggingface.co/...lora.safetensors"
-                          onChange={e => setWsLoras(prev => { const n=[...prev]; n[idx]={...n[idx], path: e.target.value}; return n; })}
-                          className="flex-1 p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs" />
-                        <input type="number" value={lora.scale} min={0} max={4} step={0.1}
-                          onChange={e => setWsLoras(prev => { const n=[...prev]; n[idx]={...n[idx], scale: Number(e.target.value)}; return n; })}
-                          className="w-16 p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs" />
-                        <button onClick={() => setWsLoras(prev => prev.filter((_, i) => i !== idx))}
-                          className="p-2 text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
-                      </div>
-                    ))}
-                    {wsLoras.length < 3 && (
-                      <button onClick={() => setWsLoras(prev => [...prev, { path: '', scale: 1.0 }])}
-                        className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700">
-                        <Plus className="w-3 h-3" /> Add LoRA
-                      </button>
-                    )}
-                  </div>
-                );
-              })()}
             </div>
           )}
 
