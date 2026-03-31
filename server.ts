@@ -334,11 +334,13 @@ const runProactiveTasks = async () => {
     if (!freq || freq === "off") continue;
 
     const lastProactive = d.lastProactiveMessageTime || 0;
-    if (now - lastProactive < 30 * 60 * 1000) continue; // min 30 min gap
+    if (now - lastProactive < 60 * 60 * 1000) continue; // min 1 hour gap
 
     const freqHours: Record<string, number> = {
-      "1h": 1, "6h": 6, "12h": 12, "24h": 24,
-      very_frequently: 2, frequently: 4, occasionally: 8, rarely: 24,
+      "2h": 2, "3h": 3, "5h": 5, "11h": 11,
+      // Legacy values
+      "1h": 2, "6h": 5, "12h": 11, "24h": 11,
+      very_frequently: 2, frequently: 3, occasionally: 5, rarely: 11,
     };
     const hours = freqHours[freq];
     if (!hours) continue;
