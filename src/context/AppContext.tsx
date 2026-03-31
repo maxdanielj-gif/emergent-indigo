@@ -3,6 +3,7 @@ import { gzipSync, strToU8, gunzipSync, strFromU8 } from 'fflate';
 import { saveToDB, loadFromDB, deleteFromDB, clearDB } from '../services/db';
 import { onForegroundMessage, requestNotificationPermission } from '../services/webPushService';
 import { showNativeNotification } from '../services/notificationService';
+import { backupToFirestore, restoreFromFirestore } from '../services/firebaseService';
 import { AIProfile, UserProfile, ChatMessage, GalleryItem, JournalEntry, Memory, KnowledgeBaseDocument, ChatSession, Background, ProactiveCommunication } from '../types';
 
 export interface Toast {
@@ -139,6 +140,8 @@ interface AppContextType extends AppState {
   addBackground: (background: Background) => void;
   deleteBackground: (id: string) => void;
   fetchWithRetry: (url: string, options: RequestInit, retries?: number, backoff?: number) => Promise<Response>;
+  firebaseBackup: (data: any) => Promise<void>;
+  firebaseRestore: () => Promise<any | null>;
   asyncApiKey: string | null;
   setAsyncApiKey: (key: string | null) => void;
   firebaseApiKey: string | null;
@@ -574,6 +577,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setGeminiApiKeyState(savedData.geminiApiKey || null);
                 setFreepikApiKeyState(savedData.freepikApiKey || null);
                 setWavespeedApiKeyState(savedData.wavespeedApiKey || null);
+                setStabilityApiKeyState(savedData.stabilityApiKey || null);
+                setFirebaseApiKey(savedData.firebaseApiKey || null);
                 setFirebaseProjectId(savedData.firebaseProjectId || null);
                 setFirebaseAppId(savedData.firebaseAppId || null);
                 setFirebaseMessagingSenderId(savedData.firebaseMessagingSenderId || null);
@@ -1101,6 +1106,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const setStabilityApiKey = (key: string | null) => {
     setStabilityApiKeyState(key);
+  };
+
+  // ── Firebase backup / restore ────────────────────────────────────────────────
+  const firebaseBackup = async (dataToBackup: any) => {
+    if (!userId) throw new Error("Set a User ID in Cloud Sync settings before backing up.");
+    await backupToFirestore(userId, dataToBackup);
+  };
+
+  const firebaseRestore = async (): Promise<any | null> => {
+    if (!userId) throw new Error("Set a User ID in Cloud Sync settings before restoring.");
+    return restoreFromFirestore(userId);
   };
 
   const clearAllToasts = () => {
@@ -1647,7 +1663,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isLoaded, isSuccessfullyLoaded, lastInteractionTime, setLastInteractionTime,
       userId, setUserId, isSyncing, setIsSyncing,
       exportGalleryData, exportGalleryChunks, importGalleryData, importGalleryChunks, syncGalleryToCloud, restoreGalleryFromCloud, restoreGalleryFromDrive,
-      updateAIProfile, fetchWithRetry, clearAllToasts
+      updateAIProfile, fetchWithRetry, clearAllToasts,
+      firebaseBackup, firebaseRestore,
     }}>
       {!isLoaded ? (
         <div className="flex h-screen flex-col items-center justify-center bg-indigo-50 dark:bg-indigo-950 p-4 text-center">

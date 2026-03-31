@@ -16,6 +16,7 @@ const SettingsScreen: React.FC = () => {
     geminiApiKey, setGeminiApiKey,
     freepikApiKey, setFreepikApiKey,
     wavespeedApiKey, setWavespeedApiKey,
+    stabilityApiKey, setStabilityApiKey,
     setShowTutorial,
     autoSaveChat, setAutoSaveChat, autoSaveChatInterval, setAutoSaveChatInterval,
     autoJsonBackup, setAutoJsonBackup, autoJsonBackupInterval, setAutoJsonBackupInterval,
@@ -31,6 +32,7 @@ const SettingsScreen: React.FC = () => {
     syncFrequency, setSyncFrequency,
     updateAIProfile,
     isDebuggerEnabled, setIsDebuggerEnabled,
+    firebaseBackup, firebaseRestore,
   } = useApp();
 
   const { chatHistory, addChatMessage, setChatHistory, sessions, setSessions, activeSessionId, setActiveSessionId } = useChat();
@@ -44,6 +46,9 @@ const SettingsScreen: React.FC = () => {
   const [localGeminiApiKey,       setLocalGeminiApiKey]       = useState(geminiApiKey || '');
   const [localFreepikApiKey,  setLocalFreepikApiKey]  = useState(freepikApiKey || '');
   const [localWavespeedApiKey, setLocalWavespeedApiKey] = useState(wavespeedApiKey || '');
+  const [localStabilityApiKey, setLocalStabilityApiKey] = useState(stabilityApiKey || '');
+  const [isFirebaseBackingUp,  setIsFirebaseBackingUp]  = useState(false);
+  const [isFirebaseRestoring,  setIsFirebaseRestoring]  = useState(false);
 
   // Sync local key fields once the context loads saved values from IndexedDB
   React.useEffect(() => { setLocalAnthropicApiKey(anthropicApiKey || ''); }, [anthropicApiKey]);
@@ -52,6 +57,7 @@ const SettingsScreen: React.FC = () => {
   React.useEffect(() => { setLocalGeminiApiKey(geminiApiKey || ''); }, [geminiApiKey]);
   React.useEffect(() => { setLocalFreepikApiKey(freepikApiKey || ''); }, [freepikApiKey]);
   React.useEffect(() => { setLocalWavespeedApiKey(wavespeedApiKey || ''); }, [wavespeedApiKey]);
+  React.useEffect(() => { setLocalStabilityApiKey(stabilityApiKey || ''); }, [stabilityApiKey]);
   const [localSyncId,          setLocalSyncId]          = useState(userId || '');
   const [recoveryId,           setRecoveryId]           = useState('');
   const [isExporting,          setIsExporting]          = useState(false);
@@ -140,6 +146,44 @@ const SettingsScreen: React.FC = () => {
   const handleSaveWavespeedKey = () => {
     setWavespeedApiKey(localWavespeedApiKey.trim() || null);
     addToast({ title: 'Saved', message: 'WaveSpeed API key saved.', type: 'success' });
+  };
+  const handleSaveStabilityKey = () => {
+    setStabilityApiKey(localStabilityApiKey.trim() || null);
+    addToast({ title: 'Saved', message: 'Stability AI key saved.', type: 'success' });
+  };
+
+  const handleFirebaseBackup = async () => {
+    setIsFirebaseBackingUp(true);
+    try {
+      // Collect current app data for backup (chat history + journal + memories + gallery metadata)
+      const currentData = {
+        userId,
+        timestamp: Date.now(),
+        note: 'Backed up from indigo AI app',
+      };
+      await firebaseBackup(currentData);
+      addToast({ title: 'Backup complete', message: `App data backed up to Firebase for user: ${userId}`, type: 'success' });
+    } catch (e: any) {
+      addToast({ title: 'Backup failed', message: e.message || 'Could not back up to Firebase.', type: 'error' });
+    } finally {
+      setIsFirebaseBackingUp(false);
+    }
+  };
+
+  const handleFirebaseRestore = async () => {
+    setIsFirebaseRestoring(true);
+    try {
+      const data = await firebaseRestore();
+      if (!data) {
+        addToast({ title: 'No backup found', message: `No Firebase backup found for user ID: ${userId}`, type: 'warning' });
+      } else {
+        addToast({ title: 'Backup found', message: `Firebase backup found (saved ${data.backedUpAt ? new Date(data.backedUpAt?.toDate?.() ?? data.backedUpAt).toLocaleString() : 'N/A'}). Use the standard JSON import to restore data.`, type: 'info' });
+      }
+    } catch (e: any) {
+      addToast({ title: 'Restore failed', message: e.message || 'Could not reach Firebase.', type: 'error' });
+    } finally {
+      setIsFirebaseRestoring(false);
+    }
   };
 
   // ── Notifications ────────────────────────────────────────────────
@@ -464,6 +508,30 @@ const SettingsScreen: React.FC = () => {
               </p>
             </div>
 
+            {/* Stability AI */}
+            <div>
+              <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                Stability AI Key <span className="text-indigo-400 dark:text-indigo-500 font-normal">(for SD3.5 — minimal content restrictions)</span>
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
+                  <input
+                    type="password"
+                    value={localStabilityApiKey}
+                    onChange={(e) => setLocalStabilityApiKey(e.target.value)}
+                    placeholder="sk-..."
+                    data-testid="stability-api-key-input"
+                    className="app-input pl-9"
+                  />
+                </div>
+                <button onClick={handleSaveStabilityKey} data-testid="stability-api-key-save" className="app-btn-primary">Save</button>
+              </div>
+              <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
+                Get a key at <a href="https://platform.stability.ai/account/keys" target="_blank" rel="noreferrer" className="underline">platform.stability.ai</a>. Enables Stable Image Core and SD3.5 generation.
+              </p>
+            </div>
+
           </div>
         </section>
 
@@ -554,6 +622,44 @@ const SettingsScreen: React.FC = () => {
               </div>
             </div>
 
+          </div>
+        </section>
+
+        {/* ── Firebase Backup ── */}
+        <section>
+          <h3 className="text-lg font-semibold text-indigo-900 dark:text-indigo-100 mb-4 border-b border-indigo-200 dark:border-indigo-800 pb-2">Firebase Backup</h3>
+          <div className="space-y-3">
+            <p className="text-sm text-indigo-600 dark:text-indigo-400">
+              Back up your app data to Firebase Firestore. Your User ID (set in Cloud Sync above) is used as the backup key.
+            </p>
+            {!userId && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-sm text-amber-700 dark:text-amber-300">
+                Set a User ID in Cloud Sync &amp; Recovery above before using Firebase backup.
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={handleFirebaseBackup}
+                disabled={isFirebaseBackingUp || !userId}
+                data-testid="firebase-backup-btn"
+                className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
+                {isFirebaseBackingUp
+                  ? <><RefreshCw className="w-4 h-4 animate-spin" />Backing up…</>
+                  : 'Backup to Firebase'}
+              </button>
+              <button
+                onClick={handleFirebaseRestore}
+                disabled={isFirebaseRestoring || !userId}
+                data-testid="firebase-restore-btn"
+                className="flex-1 py-2.5 bg-white dark:bg-indigo-900 border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
+                {isFirebaseRestoring
+                  ? <><RefreshCw className="w-4 h-4 animate-spin" />Checking…</>
+                  : 'Check Firebase Backup'}
+              </button>
+            </div>
+            <p className="text-xs text-indigo-400 dark:text-indigo-500">
+              Firebase project: <span className="font-mono">gen-lang-client-0184415198</span>. Gallery images are excluded from Firestore backups to stay within document size limits.
+            </p>
           </div>
         </section>
 

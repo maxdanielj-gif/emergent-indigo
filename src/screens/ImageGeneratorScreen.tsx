@@ -8,12 +8,33 @@ import {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-// Provider choices (top-level: Freepik Mystic vs WaveSpeed)
+// Provider choices
 const PROVIDERS = [
   { label: 'Freepik Mystic — Ultra-realistic, LoRA support', value: 'freepik' },
   { label: 'WaveSpeed — Flux 2 Klein 9B image editing', value: 'wavespeed' },
+  { label: 'Stability AI — SD3.5, minimal content restrictions', value: 'stability' },
 ] as const;
-type Provider = 'freepik' | 'wavespeed';
+type Provider = 'freepik' | 'wavespeed' | 'stability';
+
+// Stability AI models
+const STABILITY_MODELS = [
+  { label: 'Stable Image Core — Fast, high quality',       value: 'stable-image-core' },
+  { label: 'SD 3.5 Large — Highest quality (8B)',          value: 'stable-diffusion-3.5-large' },
+  { label: 'SD 3.5 Large Turbo — Fast (4-step)',           value: 'stable-diffusion-3.5-large-turbo' },
+  { label: 'SD 3.5 Medium — Balanced speed/quality',       value: 'stable-diffusion-3.5-medium' },
+];
+
+const STABILITY_ASPECT_RATIOS = [
+  { label: 'Square (1:1)',     value: '1:1'  },
+  { label: 'Landscape (16:9)', value: '16:9' },
+  { label: 'Portrait (9:16)',  value: '9:16' },
+  { label: 'Portrait (2:3)',   value: '2:3'  },
+  { label: 'Landscape (3:2)',  value: '3:2'  },
+  { label: 'Social (4:5)',     value: '4:5'  },
+  { label: 'Social (5:4)',     value: '5:4'  },
+  { label: 'Ultra-wide (21:9)',value: '21:9' },
+  { label: 'Ultra-tall (9:21)',value: '9:21' },
+];
 
 // WaveSpeed uses a single model — Flux 2 Klein 9B Edit
 const WS_MODEL_ID = 'wavespeed-ai/flux-2-klein-9b/edit';
@@ -131,7 +152,7 @@ function ImagePickerButton({ label, value, onChange }: {
 // ── Main component ────────────────────────────────────────────────────────────
 
 const ImageGeneratorScreen: React.FC = () => {
-  const { freepikApiKey, wavespeedApiKey, aiProfile, addToGallery, addToast } = useApp();
+  const { freepikApiKey, wavespeedApiKey, stabilityApiKey, aiProfile, addToGallery, addToast } = useApp();
   const hasRef = !!aiProfile.referenceImage;
 
   const [activeTab, setActiveTab] = useState<Tab>('Generate');
@@ -180,6 +201,13 @@ const ImageGeneratorScreen: React.FC = () => {
   const [jobStatus,   setJobStatus]   = useState<JobStatus>('idle');
   const [statusMsg,   setStatusMsg]   = useState('');
   const [resultImages,setResultImages]= useState<string[]>([]);
+
+  // Stability AI state
+  const [stabilityModel,       setStabilityModel]       = useState('stable-image-core');
+  const [stabilityAspectRatio, setStabilityAspectRatio] = useState('1:1');
+  const [stabilitySeed,        setStabilitySeed]        = useState('');
+  const [stabilityResult,      setStabilityResult]      = useState<string | null>(null);
+  const [stabilityLoading,     setStabilityLoading]     = useState(false);
 
   const pollRef    = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -368,6 +396,37 @@ const ImageGeneratorScreen: React.FC = () => {
   const handleGenerate = async () => {
     if (!prompt.trim()) { addToast({ title: 'Prompt required', message: 'Describe the image you want.', type: 'warning' }); return; }
 
+    // ── Stability AI ─────────────────────────────────────────────────────────
+    if (provider === 'stability') {
+      setStabilityLoading(true);
+      setStabilityResult(null);
+      try {
+        const res = await fetch('/api/image/stability/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt:         prompt.trim(),
+            negativePrompt: negPrompt.trim() || undefined,
+            aspectRatio:    stabilityAspectRatio,
+            outputFormat:   'png',
+            model:          stabilityModel,
+            seed:           stabilitySeed ? Number(stabilitySeed) : undefined,
+            apiKey:         stabilityApiKey || undefined,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { addToast({ title: 'Stability AI error', message: data.error || 'Generation failed.', type: 'error' }); return; }
+        setStabilityResult(data.image);
+        addToGallery({ url: data.image, prompt: prompt.trim(), provider: 'Stability AI', model: stabilityModel, aspectRatio: stabilityAspectRatio, seed: data.seed });
+        addToast({ title: 'Image generated', message: `Model: ${stabilityModel}`, type: 'success' });
+      } catch (e: any) {
+        addToast({ title: 'Generation failed', message: e.message, type: 'error' });
+      } finally {
+        setStabilityLoading(false);
+      }
+      return;
+    }
+
     // Check appropriate API key
     if (provider === 'freepik' && !freepikApiKey) { addToast({ title: 'No Freepik key', message: 'Add your key in Settings.', type: 'warning' }); return; }
     if (provider === 'wavespeed' && !wavespeedApiKey) { addToast({ title: 'No WaveSpeed key', message: 'Add your key in Settings.', type: 'warning' }); return; }
@@ -552,7 +611,9 @@ const ImageGeneratorScreen: React.FC = () => {
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <div>
         <h2 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">Image Generator</h2>
-        <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">Powered by {provider === 'wavespeed' ? 'WaveSpeed AI' : 'Freepik'}</p>
+        <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">
+          Powered by {provider === 'wavespeed' ? 'WaveSpeed AI' : provider === 'stability' ? 'Stability AI' : 'Freepik'}
+        </p>
       </div>
 
       {provider === 'freepik' && !freepikApiKey && (
@@ -565,6 +626,12 @@ const ImageGeneratorScreen: React.FC = () => {
         <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-sm text-amber-700 dark:text-amber-300">
           Add your WaveSpeed API key in Settings. Get one at{' '}
           <a href="https://wavespeed.ai/accesskey" target="_blank" rel="noreferrer" className="underline font-medium">wavespeed.ai/accesskey</a>. Requires a top-up to activate.
+        </div>
+      )}
+      {provider === 'stability' && !stabilityApiKey && (
+        <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-sm text-amber-700 dark:text-amber-300">
+          Add your Stability AI API key in Settings. Get one at{' '}
+          <a href="https://platform.stability.ai/account/keys" target="_blank" rel="noreferrer" className="underline font-medium">platform.stability.ai</a>.
         </div>
       )}
 
@@ -822,6 +889,54 @@ const ImageGeneratorScreen: React.FC = () => {
             </div>
           )}
 
+          {/* ── STABILITY AI controls ── */}
+          {provider === 'stability' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Model</label>
+                  <select value={stabilityModel} onChange={e => setStabilityModel(e.target.value)}
+                    className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                    {STABILITY_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Aspect Ratio</label>
+                  <select value={stabilityAspectRatio} onChange={e => setStabilityAspectRatio(e.target.value)}
+                    className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                    {STABILITY_ASPECT_RATIOS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                  Seed <span className="font-normal text-indigo-400">(optional)</span>
+                </label>
+                <input type="number" value={stabilitySeed} onChange={e => setStabilitySeed(e.target.value)}
+                  placeholder="Leave empty for random"
+                  min={0} max={4294967295}
+                  className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs focus:ring-2 focus:ring-indigo-500 outline-none" />
+              </div>
+              {/* Result */}
+              {stabilityLoading && (
+                <div className="flex items-center gap-2 p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                  <RefreshCw className="w-4 h-4 text-indigo-500 animate-spin" />
+                  <span className="text-sm text-indigo-600 dark:text-indigo-400">Generating with Stability AI…</span>
+                </div>
+              )}
+              {stabilityResult && !stabilityLoading && (
+                <div className="space-y-2">
+                  <img src={stabilityResult} alt="Stability AI result"
+                    className="w-full rounded-xl border border-indigo-200 dark:border-indigo-700 shadow" />
+                  <button onClick={() => downloadImage(stabilityResult, 0)}
+                    className="flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+                    <Download className="w-3.5 h-3.5" /> Download
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Advanced Settings — Mystic only */}
           {provider === 'freepik' && (
             <div>
@@ -881,9 +996,23 @@ const ImageGeneratorScreen: React.FC = () => {
           )}
 
           {/* Generate button */}
-          <button onClick={handleGenerate} disabled={isGenerating || !prompt.trim() || !freepikApiKey}
+          <button
+            onClick={handleGenerate}
+            disabled={
+              (provider === 'stability' ? stabilityLoading : isGenerating) ||
+              !prompt.trim() ||
+              (provider === 'freepik' && !freepikApiKey) ||
+              (provider === 'wavespeed' && !wavespeedApiKey)
+            }
+            data-testid="generate-image-btn"
             className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-            {isGenerating ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg || 'Generating…'}</> : <><Wand2 className="w-4 h-4" />Generate Image</>}
+            {provider === 'stability'
+              ? stabilityLoading
+                ? <><RefreshCw className="w-4 h-4 animate-spin" />Generating…</>
+                : <><Wand2 className="w-4 h-4" />Generate with Stability AI</>
+              : isGenerating
+                ? <><RefreshCw className="w-4 h-4 animate-spin" />{statusMsg || 'Generating…'}</>
+                : <><Wand2 className="w-4 h-4" />Generate Image</>}
           </button>
 
           {/* LoRA section — Mystic only, below generate button */}

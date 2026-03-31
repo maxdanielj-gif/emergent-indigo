@@ -12,6 +12,7 @@ import { fileURLToPath } from "url";
 import { Readable } from "stream";
 import Anthropic from "@anthropic-ai/sdk";
 import webpush from "web-push";
+import { MongoClient, Db, Collection } from "mongodb";
 
 dotenv.config();
 
@@ -184,13 +185,44 @@ if (!fs.existsSync(path.join(__dirname, "data"))) {
 }
 
 let cloudSyncData: Record<string, any> = {};
-if (fs.existsSync(SYNC_DATA_PATH)) {
+
+// ── MongoDB sync storage ──────────────────────────────────────────────────────
+let mongoDb: Db | null = null;
+let syncCollection: Collection | null = null;
+
+async function connectMongo() {
   try {
-    cloudSyncData = JSON.parse(fs.readFileSync(SYNC_DATA_PATH, "utf-8"));
+    const mongoUrl = process.env.MONGO_URL || "mongodb://localhost:27017";
+    const dbName   = process.env.DB_NAME   || "indigo_ai";
+    const client   = new MongoClient(mongoUrl);
+    await client.connect();
+    mongoDb        = client.db(dbName);
+    syncCollection = mongoDb.collection("sync_data");
+    await syncCollection.createIndex({ userId: 1 }, { unique: true });
+    console.log("MongoDB connected for cloud sync");
+
+    // Load all existing sync data into memory
+    const docs = await syncCollection.find({}).toArray();
+    for (const doc of docs) {
+      if (doc.userId) cloudSyncData[doc.userId] = doc.data;
+    }
+    console.log(`Loaded ${docs.length} user records from MongoDB`);
   } catch (e) {
-    console.error("Failed to load sync data:", e);
+    console.error("MongoDB connection failed, falling back to JSON file:", e);
+    // Fall back to JSON file
+    if (fs.existsSync(SYNC_DATA_PATH)) {
+      try {
+        cloudSyncData = JSON.parse(fs.readFileSync(SYNC_DATA_PATH, "utf-8"));
+        console.log("Loaded sync data from JSON fallback");
+      } catch (jsonErr) {
+        console.error("Failed to load JSON fallback:", jsonErr);
+      }
+    }
   }
 }
+
+// Start MongoDB connection
+connectMongo();
 
 let isSaving = false;
 let pendingSave = false;
@@ -202,11 +234,24 @@ const saveSyncData = async () => {
   isSaving = true;
   pendingSave = false;
   try {
-    const data = JSON.stringify(cloudSyncData);
-    const tempPath = SYNC_DATA_PATH + ".tmp";
-    await fs.promises.writeFile(tempPath, data);
-    await fs.promises.rename(tempPath, SYNC_DATA_PATH);
-    console.log(`Sync data saved (${(data.length / 1024 / 1024).toFixed(2)} MB)`);
+    if (syncCollection) {
+      // Save all dirty entries to MongoDB
+      const ops = Object.entries(cloudSyncData).map(([userId, data]) => ({
+        updateOne: {
+          filter: { userId },
+          update: { $set: { userId, data, lastSync: Date.now() } },
+          upsert: true,
+        },
+      }));
+      if (ops.length > 0) await syncCollection.bulkWrite(ops as any);
+    } else {
+      // JSON file fallback
+      const data = JSON.stringify(cloudSyncData);
+      const tempPath = SYNC_DATA_PATH + ".tmp";
+      await fs.promises.writeFile(tempPath, data);
+      await fs.promises.rename(tempPath, SYNC_DATA_PATH);
+      console.log(`Sync data saved to JSON (${(data.length / 1024 / 1024).toFixed(2)} MB)`);
+    }
   } catch (e) {
     console.error("Failed to save sync data:", e);
   } finally {
@@ -1094,6 +1139,76 @@ app.get("/api/wavespeed/status/:taskId", async (req, res) => {
   }
 });
 
+
+// ── Stability AI: text-to-image ───────────────────────────────────────────────
+const STABILITY_MODELS: Record<string, string> = {
+  "stable-image-core":              "core",
+  "stable-diffusion-3.5-large":     "sd3",
+  "stable-diffusion-3.5-large-turbo": "sd3",
+  "stable-diffusion-3.5-medium":    "sd3",
+};
+
+app.post("/api/image/stability/generate", express.json({ limit: "20mb" }), async (req, res) => {
+  const {
+    prompt, negativePrompt, aspectRatio, outputFormat,
+    model, seed, cfgScale,
+    apiKey: userApiKey,
+  } = req.body;
+
+  if (!prompt) return res.status(400).json({ error: "Prompt is required." });
+
+  const apiKey = userApiKey || process.env.STABILITY_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "Stability AI API key not configured. Add it in Settings." });
+
+  const selectedModel = model || "stable-image-core";
+  const endpoint      = STABILITY_MODELS[selectedModel] || "core";
+
+  try {
+    const form = new FormData();
+    form.append("prompt",        prompt.trim());
+    form.append("output_format", outputFormat || "png");
+    if (negativePrompt?.trim()) form.append("negative_prompt", negativePrompt.trim());
+    if (aspectRatio)            form.append("aspect_ratio",    aspectRatio);
+    if (seed !== undefined && seed !== null && seed !== "") form.append("seed", String(seed));
+    if (cfgScale !== undefined) form.append("cfg_scale",      String(cfgScale));
+    // SD3 models need model param
+    if (endpoint === "sd3" && selectedModel !== "stable-image-core") {
+      form.append("model", selectedModel);
+    }
+
+    console.log(`Stability AI: endpoint=${endpoint}, model=${selectedModel}, aspect=${aspectRatio}, prompt="${prompt.slice(0, 80)}"`);
+
+    const response = await fetch(`https://api.stability.ai/v2beta/stable-image/generate/${endpoint}`, {
+      method:  "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Accept":        "application/json",
+      },
+      body: form,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`Stability AI error ${response.status}:`, errText);
+      if (response.status === 401) return res.status(401).json({ error: "Invalid Stability AI API key. Check it in Settings." });
+      if (response.status === 402) return res.status(402).json({ error: "Stability AI account has insufficient credits." });
+      return res.status(response.status).json({ error: `Stability AI error: ${errText}` });
+    }
+
+    const data = await response.json();
+    if (!data.image) return res.status(500).json({ error: "No image returned from Stability AI." });
+
+    console.log(`Stability AI: success, seed=${data.seed}, finish_reason=${data.finish_reason}`);
+    res.json({
+      image:         `data:image/${outputFormat || "png"};base64,${data.image}`,
+      seed:          data.seed,
+      finish_reason: data.finish_reason,
+    });
+  } catch (e: any) {
+    console.error("Stability AI generate error:", e);
+    res.status(500).json({ error: e.message || "Failed to generate image." });
+  }
+});
 
 // List all available LoRAs (Freepik defaults + user-trained)
 app.get("/api/image/loras", async (req, res) => {
