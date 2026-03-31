@@ -947,7 +947,7 @@ app.get("/api/image/status/:taskId", async (req, res) => {
   }
 });
 
-// ── WaveSpeed AI: image editing & video generation ───────────────────────────
+// ── WaveSpeed AI: image editing ──────────────────────────────────────────────
 // Unified REST API: POST to submit, GET to poll results.
 // Auth: Authorization: Bearer {WAVESPEED_API_KEY}
 // Submit: POST https://api.wavespeed.ai/api/v3/{model-id}
@@ -962,23 +962,10 @@ function getWaveSpeedHeaders(apiKey: string): Record<string, string> {
   };
 }
 
-// WaveSpeed model registry — image edit models and video models
+// WaveSpeed model registry — image edit models only
 const WAVESPEED_MODELS = {
   image: [
-    { id: "wavespeed-ai/qwen-image/edit",                  name: "Qwen Image Edit",              hasLora: false, maxImages: 1 },
-    { id: "wavespeed-ai/qwen-image/edit-lora",             name: "Qwen Image Edit + LoRA",       hasLora: true,  maxImages: 1 },
-    { id: "wavespeed-ai/qwen-image/edit-2511",             name: "Qwen Image Edit 2511",         hasLora: false, maxImages: 1 },
-    { id: "wavespeed-ai/qwen-image/edit-multiple-angles",  name: "Qwen Image Multi-Angle Edit",  hasLora: false, maxImages: 3 },
-    { id: "wavespeed-ai/qwen-image-max/edit",              name: "Qwen Image Max Edit",          hasLora: false, maxImages: 1 },
-    { id: "wavespeed-ai/flux-2-klein-4b/edit",             name: "Flux 2 Klein 4B Edit",         hasLora: false, maxImages: 3 },
     { id: "wavespeed-ai/flux-2-klein-9b/edit",             name: "Flux 2 Klein 9B Edit",         hasLora: false, maxImages: 3 },
-    { id: "wavespeed-ai/flux-2-klein-9b/edit-lora",        name: "Flux 2 Klein 9B Edit + LoRA",  hasLora: true,  maxImages: 3 },
-    { id: "wavespeed-ai/flux-2-turbo/edit",                name: "Flux 2 Turbo Edit",            hasLora: false, maxImages: 3 },
-  ],
-  video: [
-    { id: "wavespeed-ai/wan-2.2-spicy/image-to-video",      name: "WAN 2.2 Spicy Image→Video",        hasLora: false },
-    { id: "wavespeed-ai/wan-2.2-spicy/image-to-video-lora", name: "WAN 2.2 Spicy Image→Video + LoRA", hasLora: true  },
-    { id: "wavespeed-ai/wan-2.2-spicy/video-extend-lora",   name: "WAN 2.2 Spicy Video Extend + LoRA",hasLora: true  },
   ],
 };
 
