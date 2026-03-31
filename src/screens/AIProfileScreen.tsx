@@ -1129,10 +1129,10 @@ const AIProfileScreen: React.FC = () => {
                             className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-md bg-white dark:bg-indigo-900 text-indigo-900 dark:text-indigo-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                         >
                             <option value="off">Off</option>
-                            <option value="1h">1 hour</option>
-                            <option value="6h">6 hours</option>
-                            <option value="12h">12 hours</option>
-                            <option value="24h">24 hours</option>
+                            <option value="2h">About every 2 hours</option>
+                            <option value="3h">About every 3 hours</option>
+                            <option value="5h">About every 5 hours</option>
+                            <option value="11h">About every 11 hours</option>
                         </select>
                         <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
                             Allow AI to send check-in notifications.
@@ -1176,10 +1176,10 @@ const AIProfileScreen: React.FC = () => {
                                     className="w-full p-2 text-sm border border-indigo-300 dark:border-indigo-700 rounded-md bg-white dark:bg-indigo-900 text-indigo-900 dark:text-indigo-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                                 >
                                     <option value="off">Off</option>
-                                    <option value="1h">1 hour</option>
-                                    <option value="6h">6 hours</option>
-                                    <option value="12h">12 hours</option>
-                                    <option value="24h">24 hours</option>
+                                    <option value="15m">About every 15 minutes</option>
+                                    <option value="30m">About every 30 minutes</option>
+                                    <option value="45m">About every 45 minutes</option>
+                                    <option value="60m">About every 60 minutes</option>
                                 </select>
                             </div>
                         )}
