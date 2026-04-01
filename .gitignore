@@ -1,8 +1,11 @@
--e 
-# Environment files
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+memory/test_credentials.md
+
+# Environment files (keep .env.example if exists)
 *.env
 *.env.*
--e 
-# Environment files
-*.env
-*.env.*
+!.env.example

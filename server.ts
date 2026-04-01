@@ -201,8 +201,8 @@ async function connectMongo() {
     await syncCollection.createIndex({ userId: 1 }, { unique: true });
     console.log("MongoDB connected for cloud sync");
 
-    // Load all existing sync data into memory
-    const docs = await syncCollection.find({}).toArray();
+    // Load existing sync data into memory (limit to 1000 users on startup; rest loaded on demand)
+    const docs = await syncCollection.find({}, { projection: { userId: 1, data: 1 } }).limit(1000).toArray();
     for (const doc of docs) {
       if (doc.userId) cloudSyncData[doc.userId] = doc.data;
     }

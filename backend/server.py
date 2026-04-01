@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Request, Response
 import httpx
+import os
 
 app = FastAPI()
 
-NODE_BASE = "http://localhost:3000"
+NODE_BASE = os.getenv("NODE_BASE_URL", "http://localhost:3000")
 
 
 @app.api_route(

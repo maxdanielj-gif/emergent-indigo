@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "bash /app/frontend/start.sh"
+    "start": "node /app/node_modules/.bin/tsx watch /app/server.ts"
   }
 }
