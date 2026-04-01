@@ -176,3 +176,27 @@ export const listElevenLabsVoices = async (
   const data = await res.json();
   return data.voices || [];
 };
+
+// ── Cartesia TTS ──────────────────────────────────────────────────────────────
+export const generateCartesiaSpeech = async (
+  text: string,
+  voiceId: string,
+  apiKey?: string | null,
+  language = 'en'
+): Promise<Blob> => {
+  if (!apiKey) throw new Error("Cartesia API key not set. Add it in Settings.");
+
+  const res = await fetch('/api/tts/cartesia', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, voiceId, apiKey, language }),
+  });
+
+  if (!res.ok) {
+    let errMsg = `Cartesia TTS failed (${res.status})`;
+    try { const err = await res.json(); errMsg = err.error || errMsg; } catch {}
+    throw new Error(errMsg);
+  }
+
+  return await res.blob();
+};

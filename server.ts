@@ -643,6 +643,49 @@ app.get("/api/tts/elevenlabs/voices", async (req, res) => {
   }
 });
 
+// ── Cartesia TTS ──────────────────────────────────────────────────────────────
+app.post("/api/tts/cartesia", express.json(), async (req, res) => {
+  const { text, voiceId, apiKey: userApiKey, language } = req.body;
+  if (!text || !voiceId) return res.status(400).json({ error: "Missing text or voiceId" });
+
+  const apiKey = userApiKey || process.env.CARTESIA_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: "Cartesia API key not configured" });
+
+  try {
+    const response = await fetch("https://api.cartesia.ai/tts/bytes", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Cartesia-Version": "2025-04-16",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model_id: "sonic-3",
+        transcript: text,
+        voice: { mode: "id", id: voiceId },
+        output_format: { container: "mp3", encoding: "mp3", sample_rate: 24000 },
+        language: language || "en",
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`Cartesia TTS error: ${response.status} ${errText}`);
+      return res.status(response.status).json({ error: `Cartesia error: ${errText || response.statusText}` });
+    }
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    if (response.body) {
+      (Readable as any).fromWeb(response.body).pipe(res);
+    } else {
+      res.status(500).json({ error: "No audio returned from Cartesia" });
+    }
+  } catch (e: any) {
+    console.error("Cartesia TTS error:", e);
+    res.status(500).json({ error: e.message || "Failed to generate speech" });
+  }
+});
+
 // ── Async: clone voice ────────────────────────────────────────────────────────
 app.post("/api/voices/clone", async (req, res) => {
   // This endpoint receives a base64-encoded audio file + metadata from the client,
@@ -818,9 +861,44 @@ app.get("/api/sync/:userId?", (req, res) => {
   res.json(data);
 });
 
+// ── OpenRouter: chat completion (OpenAI-compatible) ──────────────────────────
+async function callOpenRouterChat(
+  systemPrompt: string,
+  messages: any[],
+  model: string,
+  temperature: number,
+  openRouterKey: string
+): Promise<string> {
+  const orMessages = [
+    { role: "system", content: systemPrompt },
+    ...messages.map((m: any) => ({
+      role: m.role === "model" ? "assistant" : m.role,
+      content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+    })),
+  ];
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${openRouterKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": process.env.RENDER_EXTERNAL_URL || "http://localhost:3000",
+      "X-Title": "Indigo AI",
+    },
+    body: JSON.stringify({ model, messages: orMessages, temperature: temperature ?? 0.7, max_tokens: 2048 }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenRouter error (${res.status}): ${err}`);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || "";
+}
+
 // ── Claude AI: main chat ──────────────────────────────────────────────────────
 app.post("/api/chat", async (req, res) => {
-  const { messages, aiProfile, userProfile, anthropicKey: clientKey, geminiKey, timeZone, attachments } = req.body;
+  const { messages, aiProfile, userProfile, anthropicKey: clientKey, geminiKey, openRouterKey, timeZone, attachments } = req.body;
   if (!aiProfile || !userProfile) {
     return res.status(400).json({ error: "AI Profile and User Profile are required." });
   }
@@ -828,6 +906,19 @@ app.post("/api/chat", async (req, res) => {
   const systemPrompt = buildSystemPrompt(aiProfile, userProfile, timeZone);
   const selectedModel = aiProfile.model || "claude-sonnet-4-6";
   const useGemini = isGeminiModel(selectedModel);
+  // OpenRouter: model IDs contain a slash (e.g. "openai/gpt-4o") and key is provided
+  const useOpenRouter = !!openRouterKey && selectedModel.includes("/");
+
+  // ── OpenRouter path ───────────────────────────────────────────────────────
+  if (useOpenRouter) {
+    try {
+      const text = await callOpenRouterChat(systemPrompt, messages, selectedModel, aiProfile.temperature ?? 0.7, openRouterKey);
+      return res.json({ content: text, provider: "openrouter" });
+    } catch (e: any) {
+      console.error("OpenRouter chat error:", e.message);
+      return res.status(500).json({ error: e.message || "OpenRouter failed." });
+    }
+  }
 
   // ── Gemini path ───────────────────────────────────────────────────────────
   if (useGemini) {

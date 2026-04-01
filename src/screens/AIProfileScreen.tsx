@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { generateAsyncSpeech, listAsyncVoices, cloneAsyncVoice, generateElevenLabsSpeech, listElevenLabsVoices } from '../services/asyncService';
+import { generateAsyncSpeech, listAsyncVoices, cloneAsyncVoice, generateElevenLabsSpeech, listElevenLabsVoices, generateCartesiaSpeech } from '../services/asyncService';
 import { useApp } from '../context/AppContext';
 import { useChat } from '../context/ChatContext';
 import { AIProfile, Background, ChatMessage, ChatSession } from '../types';
@@ -30,7 +30,8 @@ const AIProfileScreen: React.FC = () => {
   const { 
     aiProfile, setAIProfile, savePersona, deletePersona, savedPersonas, loadPersona, 
     asyncApiKey, setAmbientMode, setAmbientFrequency, addToast,
-    anthropicApiKey, elevenLabsApiKey, geminiApiKey, userId
+    anthropicApiKey, elevenLabsApiKey, geminiApiKey, userId,
+    cartesiaApiKey, openRouterApiKey,
   } = useApp();
   const { chatHistory, sessions, activeSessionId, setChatHistory, setSessions, setActiveSessionId } = useChat();
   const [name, setName] = useState(aiProfile.name);
@@ -49,7 +50,7 @@ const AIProfileScreen: React.FC = () => {
   const [autoReadMessages, setAutoReadMessages] = useState(aiProfile.autoReadMessages || false);
   const [voiceGender, setVoiceGender] = useState<'male' | 'female' | 'none'>(aiProfile.voiceGender || 'none');
   const [voiceDescription, setVoiceDescription] = useState(aiProfile.voiceDescription || '');
-  const [voiceProvider, setVoiceProvider] = useState<'browser' | 'async' | 'elevenlabs'>(
+  const [voiceProvider, setVoiceProvider] = useState<'browser' | 'async' | 'elevenlabs' | 'cartesia'>(
     (aiProfile.voiceProvider === 'gemini' ? 'browser' : aiProfile.voiceProvider) || 'browser'
   );
   const [asyncVoiceId, setAsyncVoiceId] = useState(aiProfile.asyncVoiceId || null);
@@ -92,9 +93,34 @@ const AIProfileScreen: React.FC = () => {
   }, [userId]);
   
   const CLAUDE_MODELS = ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'];
+  const OPENROUTER_MODELS = [
+    { id: 'openai/gpt-4o',                             name: 'GPT-4o (OpenAI)'              },
+    { id: 'openai/gpt-4.1',                            name: 'GPT-4.1 (OpenAI)'             },
+    { id: 'anthropic/claude-sonnet-4-5',               name: 'Claude Sonnet 4.5 (Anthropic)' },
+    { id: 'meta-llama/llama-3.3-70b-instruct',         name: 'Llama 3.3 70B (Meta)'         },
+    { id: 'google/gemini-2.0-flash-001',               name: 'Gemini 2.0 Flash (Google)'    },
+    { id: 'mistralai/mistral-nemo',                    name: 'Mistral Nemo (Mistral)'        },
+    { id: 'deepseek/deepseek-chat',                    name: 'DeepSeek V3 (DeepSeek)'       },
+    { id: 'qwen/qwen-2.5-72b-instruct',               name: 'Qwen 2.5 72B (Alibaba)'       },
+    { id: 'microsoft/phi-4',                           name: 'Phi-4 (Microsoft)'             },
+    { id: 'nousresearch/hermes-3-llama-3.1-405b',     name: 'Hermes 3 405B (Nous)'         },
+  ];
 
+  const CARTESIA_VOICES = [
+    { id: 'a0e99841-438c-4a64-b679-ae501e7d6091', name: 'Barbershop Man',       lang: 'English', gender: 'Male'   },
+    { id: '156fb8d2-335b-4950-9cb3-a2d33befec77', name: 'Helpful Woman',        lang: 'English', gender: 'Female' },
+    { id: 'e00d0e4c-a5c8-443f-a8a3-473eb9a62355', name: 'Friendly Sidekick',   lang: 'English', gender: 'Male'   },
+    { id: 'cd17ff2d-5ea4-4695-be8f-42193949b946', name: 'Meditation Lady',      lang: 'English', gender: 'Female' },
+    { id: 'b7d50908-b17c-442d-ad8d-810c63997ed9', name: 'California Girl',      lang: 'English', gender: 'Female' },
+    { id: '846fa30b-6e1a-49b9-b7df-6be47092a09a', name: 'Storyteller Man',     lang: 'Spanish', gender: 'Male'   },
+    { id: '5c5ad5e7-1020-476b-8b91-fdcbe9cc313c', name: 'Mexican Woman',        lang: 'Spanish', gender: 'Female' },
+    { id: '65b25c5d-ff07-4687-a04c-da2f43ef6fa9', name: 'French Helpful Lady', lang: 'French',  gender: 'Female' },
+    { id: '29e5f8b4-b953-4160-848f-40fae182235b', name: 'Korean Calm Woman',   lang: 'Korean',  gender: 'Female' },
+  ];
+
+  // Accept any model string (Claude, Gemini, or OpenRouter slash-format)
   const validateModel = (m: string | undefined): string => {
-    if (m && CLAUDE_MODELS.includes(m)) return m;
+    if (m) return m;
     return 'claude-sonnet-4-6';
   };
 
@@ -154,6 +180,24 @@ const AIProfileScreen: React.FC = () => {
         addToast({ title: "Voice Error", message: error.message || "ElevenLabs TTS failed.", type: "error" });
         setIsTestingVoice(false);
       }
+    } else if (voiceProvider === 'cartesia') {
+      const cVoiceId = cartesiaCustomVoiceId.trim() || cartesiaSelectedVoiceId;
+      if (!cVoiceId) {
+        addToast({ title: "Voice Error", message: "Select or enter a Cartesia voice ID first.", type: "error" });
+        setIsTestingVoice(false);
+        return;
+      }
+      try {
+        const audioBlob = await generateCartesiaSpeech(text, cVoiceId, cartesiaApiKey);
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.onended = () => { setIsTestingVoice(false); URL.revokeObjectURL(audioUrl); };
+        audio.onerror = () => { setIsTestingVoice(false); URL.revokeObjectURL(audioUrl); };
+        audio.play().catch(() => setIsTestingVoice(false));
+      } catch (error: any) {
+        addToast({ title: "Voice Error", message: error.message || "Cartesia TTS failed.", type: "error" });
+        setIsTestingVoice(false);
+      }
     } else {
       speakWithBrowser(text);
     }
@@ -199,6 +243,10 @@ const AIProfileScreen: React.FC = () => {
     setVoiceDescription(aiProfile.voiceDescription || '');
     setVoiceProvider((aiProfile.voiceProvider === 'gemini' ? 'browser' : aiProfile.voiceProvider) || 'browser');
     setAsyncVoiceId(aiProfile.asyncVoiceId || null);
+    if (aiProfile.voiceProvider === 'cartesia') {
+      setCartesiaSelectedVoiceId(aiProfile.asyncVoiceId || '');
+      setCartesiaCustomVoiceId('');
+    }
     setResponseLength(aiProfile.responseLength || 'medium');
     setResponseDetail(aiProfile.responseDetail || 'standard');
     setResponseTone(aiProfile.responseTone || 'friendly');
@@ -469,6 +517,8 @@ const AIProfileScreen: React.FC = () => {
             aiProfile: previewProfile,
             userProfile: { name: 'User', email: '', info: '', preferences: '', appearance: '', referenceImage: null },
             anthropicKey: anthropicApiKey || undefined,
+            geminiKey: geminiApiKey || undefined,
+            openRouterKey: openRouterApiKey || undefined,
           }),
         });
         if (!res.ok) throw new Error((await res.json()).error || 'Failed');
@@ -657,6 +707,15 @@ const AIProfileScreen: React.FC = () => {
   const [languageFilter, setLanguageFilter] = useState<string>('');
   const [accentFilter, setAccentFilter] = useState<string>('');
   const [styleFilter, setStyleFilter] = useState<string>('');
+
+  // Cartesia state
+  const [cartesiaSelectedVoiceId, setCartesiaSelectedVoiceId] = useState<string>(
+    aiProfile.voiceProvider === 'cartesia' ? (aiProfile.asyncVoiceId || '') : ''
+  );
+  const [cartesiaCustomVoiceId, setCartesiaCustomVoiceId] = useState<string>('');
+  const [openRouterCustomModel, setOpenRouterCustomModel] = useState<string>(
+    model && model.includes('/') ? model : ''
+  );
 
   // Voice clone state
   const [showClonePanel, setShowClonePanel] = useState(false);
@@ -1289,7 +1348,10 @@ const AIProfileScreen: React.FC = () => {
                             <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">AI Model</label>
                             <select
                                 value={model}
-                                onChange={(e) => setModel(e.target.value)}
+                                onChange={(e) => {
+                                  setModel(e.target.value);
+                                  if (!e.target.value.includes('/')) setOpenRouterCustomModel('');
+                                }}
                                 className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-md bg-white dark:bg-indigo-900 text-indigo-900 dark:text-indigo-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                             >
                                 <option value="claude-sonnet-4-6">Claude Sonnet (Recommended)</option>
@@ -1299,7 +1361,27 @@ const AIProfileScreen: React.FC = () => {
                                 <option value="gemini-2.0-flash">Gemini 2.0 Flash (Fast)</option>
                                 <option value="gemini-1.5-pro">Gemini 1.5 Pro (Capable)</option>
                                 <option value="gemini-1.5-flash">Gemini 1.5 Flash (Fastest)</option>
+                                <option disabled value="">── OpenRouter (requires OpenRouter key) ──</option>
+                                {OPENROUTER_MODELS.map(m => (
+                                  <option key={m.id} value={m.id}>{m.name}</option>
+                                ))}
+                                <option value="__custom_openrouter__">Custom OpenRouter model…</option>
                             </select>
+                            {(model === '__custom_openrouter__' || (model.includes('/') && !OPENROUTER_MODELS.find(m => m.id === model))) && (
+                              <div className="mt-2">
+                                <input
+                                  type="text"
+                                  value={openRouterCustomModel}
+                                  onChange={(e) => {
+                                    setOpenRouterCustomModel(e.target.value);
+                                    if (e.target.value.trim()) setModel(e.target.value.trim());
+                                  }}
+                                  placeholder="e.g. nousresearch/hermes-3-llama-3.1-405b"
+                                  className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-md bg-white dark:bg-indigo-900 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                                <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-0.5">Enter any <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer" className="underline">OpenRouter model ID</a></p>
+                              </div>
+                            )}
                         </div>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
@@ -1448,11 +1530,22 @@ const AIProfileScreen: React.FC = () => {
                                         <Headphones className="w-3 h-3 mr-1" />
                                         ElevenLabs
                                     </button>
+                                    <button 
+                                        onClick={() => {
+                                            setVoiceProvider('cartesia');
+                                            setAIProfile({ ...aiProfile, voiceProvider: 'cartesia' });
+                                        }}
+                                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'cartesia' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
+                                    >
+                                        <Mic className="w-3 h-3 mr-1" />
+                                        Cartesia
+                                    </button>
                                 </div>
                                 <p className="mt-2 text-[10px] text-indigo-500 dark:text-indigo-400">
                                     {voiceProvider === 'async' && "High-quality Async API voices. Requires an Async API key in Settings."}
                                     {voiceProvider === 'elevenlabs' && "Premium ElevenLabs voices. Requires an ElevenLabs API key in Settings."}
                                     {voiceProvider === 'browser' && "Uses your device's built-in speech engine. No API key required."}
+                                    {voiceProvider === 'cartesia' && "Ultra-realistic Cartesia Sonic-3 voices. Requires a Cartesia API key in Settings."}
                                 </p>
                             </div>
 
@@ -1819,6 +1912,79 @@ const AIProfileScreen: React.FC = () => {
                                         </div>
                                         <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-1">
                                             Find voice IDs on your ElevenLabs dashboard. Works for any voice including ones you've created there.
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : voiceProvider === 'cartesia' ? (
+                                <div className="p-4 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-lg space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <label className="block text-sm font-bold text-indigo-900 dark:text-indigo-100">Cartesia Voices</label>
+
+                                    {/* Static voice list */}
+                                    <div className="space-y-1">
+                                        {CARTESIA_VOICES.map((v) => (
+                                            <div
+                                                key={v.id}
+                                                onClick={() => {
+                                                    setCartesiaSelectedVoiceId(v.id);
+                                                    setCartesiaCustomVoiceId('');
+                                                    setAsyncVoiceId(v.id);
+                                                    setAIProfile({ ...aiProfile, asyncVoiceId: v.id, voiceProvider: 'cartesia' });
+                                                }}
+                                                className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${cartesiaSelectedVoiceId === v.id && !cartesiaCustomVoiceId ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-100 dark:hover:bg-indigo-800'}`}
+                                                data-testid={`cartesia-voice-${v.id}`}
+                                            >
+                                                <div className="flex-1 min-w-0">
+                                                    <span className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">{v.name}</span>
+                                                    <span className="text-[10px] text-indigo-400 dark:text-indigo-500 ml-2">{v.lang} · {v.gender}</span>
+                                                </div>
+                                                <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ml-2 ${cartesiaSelectedVoiceId === v.id && !cartesiaCustomVoiceId ? 'border-indigo-600 bg-indigo-600' : 'border-indigo-300 dark:border-indigo-700'}`}>
+                                                    {cartesiaSelectedVoiceId === v.id && !cartesiaCustomVoiceId && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="flex justify-center">
+                                        <button
+                                            onClick={handleTestVoice}
+                                            disabled={isTestingVoice || (!cartesiaSelectedVoiceId && !cartesiaCustomVoiceId)}
+                                            className="flex items-center space-x-2 py-2 px-6 bg-indigo-600 text-white rounded-full text-sm font-medium hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-md"
+                                            data-testid="cartesia-test-voice-btn"
+                                        >
+                                            {isTestingVoice ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                                            <span>Test Cartesia Voice</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Custom Voice ID */}
+                                    <div className="border-t border-indigo-100 dark:border-indigo-800 pt-3">
+                                        <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Custom Voice ID</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={cartesiaCustomVoiceId}
+                                                onChange={(e) => setCartesiaCustomVoiceId(e.target.value)}
+                                                placeholder="Paste a Cartesia voice UUID"
+                                                className="flex-1 p-2 border border-indigo-300 dark:border-indigo-700 rounded-lg bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                data-testid="cartesia-custom-voice-id-input"
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    const id = cartesiaCustomVoiceId.trim();
+                                                    if (!id) return;
+                                                    setCartesiaSelectedVoiceId('');
+                                                    setAsyncVoiceId(id);
+                                                    setAIProfile({ ...aiProfile, asyncVoiceId: id, voiceProvider: 'cartesia' });
+                                                    addToast({ title: 'Voice Set', message: 'Custom Cartesia voice ID saved.', type: 'success' });
+                                                }}
+                                                className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                                                data-testid="cartesia-custom-voice-use-btn"
+                                            >
+                                                Use
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-1">
+                                            Find more voices at <a href="https://play.cartesia.ai" target="_blank" rel="noreferrer" className="underline">play.cartesia.ai</a>. Requires a Cartesia API key in Settings.
                                         </p>
                                     </div>
                                 </div>

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Send, Image as ImageIcon, Mic, Paperclip, Volume2, RotateCcw, Edit2, X, FileText, CheckCheck, Loader2, Camera, Trash2, ExternalLink, Plus, MessageSquare, History, MoreVertical, ChevronLeft, ChevronRight, Search, Star, Headphones, ArrowDown, Sparkles } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useChat } from '../context/ChatContext';
-import { generateAsyncSpeech, generateElevenLabsSpeech } from '../services/asyncService';
+import { generateAsyncSpeech, generateElevenLabsSpeech, generateCartesiaSpeech } from '../services/asyncService';
 import { showNativeNotification } from '../services/notificationService';
 import ChatMessageItem from '../components/ChatMessageItem';
 import ImageModal from '../components/ImageModal';
@@ -15,6 +15,7 @@ const ChatScreen: React.FC = () => {
     aiProfile, userProfile, knowledgeBase, 
     addToKnowledgeBase, addToGallery, apiKey, asyncApiKey, openRouterApiKey, 
     anthropicApiKey, geminiApiKey, elevenLabsApiKey, kaggleApiKey, openaiApiKey, stabilityApiKey,
+    cartesiaApiKey,
     memories, journal, 
     addJournalEntry, addMemory, showTimestamps, timeZone, addToast,
     setAIProfile, setLastInteractionTime
@@ -252,6 +253,17 @@ const ChatScreen: React.FC = () => {
       } catch {
         speakWithBrowser(text, messageId);
       }
+    } else if (aiProfile.voiceProvider === 'cartesia' && aiProfile.asyncVoiceId) {
+      try {
+        const blob = await generateCartesiaSpeech(text, aiProfile.asyncVoiceId, cartesiaApiKey);
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.onended = () => { onEnd(); URL.revokeObjectURL(url); };
+        audio.onerror = () => { URL.revokeObjectURL(url); speakWithBrowser(text, messageId); };
+        audio.play();
+      } catch {
+        speakWithBrowser(text, messageId);
+      }
     } else if (aiProfile.voiceProvider === 'async' && aiProfile.asyncVoiceId) {
       try {
         const blob = await generateAsyncSpeech(text, aiProfile.asyncVoiceId, asyncApiKey);
@@ -350,6 +362,7 @@ const ChatScreen: React.FC = () => {
           userProfile,
           anthropicKey: anthropicApiKey || undefined,
           geminiKey: geminiApiKey || undefined,
+          openRouterKey: openRouterApiKey || undefined,
           attachments: attachments.length > 0 ? attachments : undefined,
           timeZone,
         }),
