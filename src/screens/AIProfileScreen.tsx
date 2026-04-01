@@ -279,6 +279,7 @@ const AIProfileScreen: React.FC = () => {
     setElSpeakingRate(aiProfile.elSpeakingRate  ?? 1.0);
     setCartesiaSpeed(aiProfile.cartesiaSpeed   ?? 1.0);
     setCartesiaEmotion(aiProfile.cartesiaEmotion ?? '');
+    setDynamicEmotion(aiProfile.dynamicEmotion  ?? false);
     setMaxTokens(aiProfile.maxTokens ?? 2048);
     setKnowsItsAI(aiProfile.knowsItsAI ?? true);
     setReferenceImage(aiProfile.referenceImage);
@@ -369,6 +370,7 @@ const AIProfileScreen: React.FC = () => {
       elSpeakingRate,
       cartesiaSpeed,
       cartesiaEmotion,
+      dynamicEmotion,
       aiCanUseTools: aiProfile.aiCanUseTools,
       aiCanBrowse: aiProfile.aiCanBrowse,
       chatHistory: aiProfile.chatHistory,
@@ -734,6 +736,7 @@ const AIProfileScreen: React.FC = () => {
   const [cartesiaCustomVoiceId, setCartesiaCustomVoiceId] = useState<string>('');
   const [cartesiaSpeed, setCartesiaSpeed]       = useState<number>(aiProfile.cartesiaSpeed   ?? 1.0);
   const [cartesiaEmotion, setCartesiaEmotion]   = useState<string>(aiProfile.cartesiaEmotion  ?? '');
+  const [dynamicEmotion, setDynamicEmotion]     = useState<boolean>(aiProfile.dynamicEmotion  ?? false);
 
   // ElevenLabs voice quality settings
   const [elStability,      setElStability]      = useState<number>(aiProfile.elStability      ?? 0.5);
@@ -1570,27 +1573,6 @@ const AIProfileScreen: React.FC = () => {
                                     </button>
                                     <button 
                                         onClick={() => {
-                                            setVoiceProvider('browser');
-                                            setAIProfile({ ...aiProfile, voiceProvider: 'browser', aiCanGenerateSpeech: aiCanGenerateSpeech });
-                                        }}
-                                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'browser' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
-                                    >
-                                        <Volume2 className="w-3 h-3 mr-1" />
-                                        Browser
-                                    </button>
-                                    <button 
-                                        onClick={() => {
-                                            setVoiceProvider('async');
-                                            setAIProfile({ ...aiProfile, voiceProvider: 'async', aiCanGenerateSpeech: aiCanGenerateSpeech });
-                                            if (asyncVoices.length === 0) fetchAsyncVoices();
-                                        }}
-                                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'async' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
-                                    >
-                                        <Mic className="w-3 h-3 mr-1" />
-                                        Async
-                                    </button>
-                                    <button 
-                                        onClick={() => {
                                             setVoiceProvider('elevenlabs');
                                             setAIProfile({ ...aiProfile, voiceProvider: 'elevenlabs', aiCanGenerateSpeech: aiCanGenerateSpeech });
                                             if (elevenLabsVoices.length === 0) fetchElevenLabsVoices();
@@ -2013,6 +1995,18 @@ const AIProfileScreen: React.FC = () => {
                                             <div className={`w-3 h-3 rounded-full bg-white transition-transform mx-auto ${elSpeakerBoost ? 'translate-x-1.5' : '-translate-x-1.5'}`} />
                                           </button>
                                         </div>
+                                        <div className="flex items-center justify-between pt-1">
+                                            <div>
+                                                <label className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">Dynamic Style</label>
+                                                <p className="text-[10px] text-indigo-400 leading-tight">Auto-scale style exaggeration based on the AI's emotional tone</p>
+                                            </div>
+                                            <button
+                                                onClick={() => setDynamicEmotion(!dynamicEmotion)}
+                                                data-testid="el-dynamic-style-toggle"
+                                                className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${dynamicEmotion ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
+                                                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${dynamicEmotion ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ) : voiceProvider === 'cartesia' ? (
@@ -2112,6 +2106,18 @@ const AIProfileScreen: React.FC = () => {
                                                 <option value="anger:high">Angry</option>
                                                 <option value="sadness:high">Deeply Sad</option>
                                             </select>
+                                        </div>
+                                        <div className="flex items-center justify-between pt-1">
+                                            <div>
+                                                <label className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">Dynamic Emotion</label>
+                                                <p className="text-[10px] text-indigo-400 leading-tight">Auto-adapt voice emotion to match the AI's reply tone</p>
+                                            </div>
+                                            <button
+                                                onClick={() => setDynamicEmotion(!dynamicEmotion)}
+                                                data-testid="dynamic-emotion-toggle"
+                                                className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${dynamicEmotion ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
+                                                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${dynamicEmotion ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                            </button>
                                         </div>
                                     </div>
                                 </div>

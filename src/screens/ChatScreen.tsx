@@ -235,6 +235,25 @@ const ChatScreen: React.FC = () => {
     }
   };
 
+  // ── Emotion detection from AI reply text ─────────────────────────────────
+  const detectEmotion = (text: string): { cartesiaEmotion: string; elStyle: number } => {
+    const t = text.toLowerCase();
+    // Happy / excited signals
+    if (/(!{2,}|😄|😊|😁|great news|wonderful|excited|congratul|absolutely|love that|fantastic|so happy|amazing)/i.test(t))
+      return { cartesiaEmotion: 'positivity:high', elStyle: 0.7 };
+    // Curious / inquisitive
+    if (/(\?{2,}|curious|interesting|wonder|tell me more|what do you think|fascinating|i\'m intrigued)/i.test(t))
+      return { cartesiaEmotion: 'curiosity:high', elStyle: 0.5 };
+    // Sad / empathetic
+    if (/(sorry to hear|that must be|how difficult|understand.*pain|I\'m sorry|unfortunately|tough situation|hard time)/i.test(t))
+      return { cartesiaEmotion: 'sadness:high', elStyle: 0.4 };
+    // Surprised
+    if (/(wow|that\'s surprising|didn\'t expect|really\?|no way|unbelievable|shocking)/i.test(t))
+      return { cartesiaEmotion: 'surprise:high', elStyle: 0.6 };
+    // Default: neutral
+    return { cartesiaEmotion: '', elStyle: aiProfile.elStyle ?? 0 };
+  };
+
   // Text to Speech
   const speakMessage = async (text: string, messageId: string) => {
     const onEnd = () => {
@@ -242,12 +261,16 @@ const ChatScreen: React.FC = () => {
       if (isHandsFree) setTimeout(() => toggleListening(true), 500);
     };
 
+    const emotionOverride = aiProfile.dynamicEmotion ? detectEmotion(text) : null;
+
     if (aiProfile.voiceProvider === 'elevenlabs' && aiProfile.asyncVoiceId) {
       try {
         const blob = await generateElevenLabsSpeech(text, aiProfile.asyncVoiceId, elevenLabsApiKey, aiProfile.elevenLabsModelId || 'eleven_v3', {
-          stability: aiProfile.elStability, similarityBoost: aiProfile.elSimilarity,
-          style: aiProfile.elStyle, useSpeakerBoost: aiProfile.elSpeakerBoost,
-          speakingRate: aiProfile.elSpeakingRate,
+          stability:       aiProfile.elStability,
+          similarityBoost: aiProfile.elSimilarity,
+          style:           emotionOverride ? emotionOverride.elStyle : aiProfile.elStyle,
+          useSpeakerBoost: aiProfile.elSpeakerBoost,
+          speakingRate:    aiProfile.elSpeakingRate,
         });
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
@@ -258,8 +281,9 @@ const ChatScreen: React.FC = () => {
         speakWithBrowser(text, messageId);
       }
     } else if (aiProfile.voiceProvider === 'cartesia' && aiProfile.asyncVoiceId) {
+      const emotion = emotionOverride?.cartesiaEmotion ?? aiProfile.cartesiaEmotion;
       try {
-        const blob = await generateCartesiaSpeech(text, aiProfile.asyncVoiceId, cartesiaApiKey, 'en', aiProfile.cartesiaSpeed, aiProfile.cartesiaEmotion ? [aiProfile.cartesiaEmotion] : undefined);
+        const blob = await generateCartesiaSpeech(text, aiProfile.asyncVoiceId, cartesiaApiKey, 'en', aiProfile.cartesiaSpeed, emotion ? [emotion] : undefined);
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         audio.onended = () => { onEnd(); URL.revokeObjectURL(url); };

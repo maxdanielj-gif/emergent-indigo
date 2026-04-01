@@ -50,7 +50,8 @@ export interface AIProfile {
   elSpeakerBoost?: boolean;  // ElevenLabs speaker boost
   elSpeakingRate?: number;   // ElevenLabs speaking rate (0.7-1.2)
   cartesiaSpeed?: number;    // Cartesia speed (0.5-2.0)
-  cartesiaEmotion?: string;  // Cartesia emotion tag
+  cartesiaEmotion?: string;  // Cartesia emotion tag (static override)
+  dynamicEmotion?: boolean;  // Auto-detect emotion from AI reply and adjust voice
   knowsItsAI: boolean;
   model: string;
   llmProvider?: 'claude' | 'gemini'; // 'gemini' kept for legacy import compatibility
