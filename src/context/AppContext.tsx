@@ -3,7 +3,7 @@ import { gzipSync, strToU8, gunzipSync, strFromU8 } from 'fflate';
 import { saveToDB, loadFromDB, deleteFromDB, clearDB } from '../services/db';
 import { onForegroundMessage, requestNotificationPermission } from '../services/webPushService';
 import { showNativeNotification } from '../services/notificationService';
-import { backupToFirestore, restoreFromFirestore, uploadGalleryToFirebaseStorage } from '../services/firebaseService';
+import { backupToFirestore, restoreFromFirestore, uploadGalleryToFirebaseStorage, restoreGalleryFromFirebaseStorage } from '../services/firebaseService';
 import { AIProfile, UserProfile, ChatMessage, GalleryItem, JournalEntry, Memory, KnowledgeBaseDocument, ChatSession, Background, ProactiveCommunication } from '../types';
 
 export interface Toast {
@@ -155,6 +155,9 @@ interface AppContextType extends AppState {
   firebaseBackup: (data: any) => Promise<void>;
   firebaseRestore: () => Promise<any | null>;
   firebaseGalleryBackup: (onProgress?: (done: number, total: number) => void) => Promise<number>;
+  firebaseGalleryRestore: (onProgress?: (done: number, total: number) => void) => Promise<number>;
+  autoBackupSchedule: 'off' | 'daily' | 'weekly';
+  setAutoBackupSchedule: (s: 'off' | 'daily' | 'weekly') => void;
   asyncApiKey: string | null;
   setAsyncApiKey: (key: string | null) => void;
   firebaseApiKey: string | null;
@@ -303,6 +306,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [lastCloudSyncTime,      setLastCloudSyncTimeState]      = useState<number | null>(null);
   const [lastFirebaseBackupTime, setLastFirebaseBackupTimeState] = useState<number | null>(null);
   const [lastGalleryBackupTime,  setLastGalleryBackupTimeState]  = useState<number | null>(null);
+  const [autoBackupSchedule,     setAutoBackupScheduleState]     = useState<'off' | 'daily' | 'weekly'>('off');
   const [anthropicApiKey, setAnthropicApiKeyState] = useState<string | null>(null);
   const [elevenLabsApiKey, setElevenLabsApiKeyState] = useState<string | null>(null);
   const [geminiApiKey, setGeminiApiKeyState] = useState<string | null>(null);
@@ -612,6 +616,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setLastCloudSyncTimeState(savedData.lastCloudSyncTime || null);
                 setLastFirebaseBackupTimeState(savedData.lastFirebaseBackupTime || null);
                 setLastGalleryBackupTimeState(savedData.lastGalleryBackupTime || null);
+                setAutoBackupScheduleState(savedData.autoBackupSchedule || 'off');
                 setFirebaseApiKey(savedData.firebaseApiKey || null);
                 setFirebaseAuthDomain(savedData.firebaseAuthDomain || null);
                 setFirebaseProjectId(savedData.firebaseProjectId || null);
@@ -743,6 +748,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           lastCloudSyncTime,
           lastFirebaseBackupTime,
           lastGalleryBackupTime,
+          autoBackupSchedule,
           lastInteractionTime,
           userId,
           isSuccessfullyLoaded,
@@ -877,6 +883,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Auto JSON Backup Interval - Moved to ChatManager to include chat data
   // Auto Google Drive Backup Interval - Moved to ChatManager to include chat data
+
+  // ── Scheduled Firebase Auto-Backup ────────────────────────────────────────
+  // Uses a ref to avoid stale closure issues with lastFirebaseBackupTime
+  const lastAutoBackupRef = React.useRef<number | null>(null);
+  useEffect(() => {
+    lastAutoBackupRef.current = lastFirebaseBackupTime;
+  }, [lastFirebaseBackupTime]);
+
+  useEffect(() => {
+    if (!isLoaded || autoBackupSchedule === 'off') return;
+    if (!userId || !firebaseApiKey || !firebaseProjectId || !firebaseAppId) return;
+
+    const INTERVAL_MS = autoBackupSchedule === 'daily'
+      ? 24 * 60 * 60 * 1000
+      : 7 * 24 * 60 * 60 * 1000;
+
+    const checkAndBackup = async () => {
+      const now = Date.now();
+      const last = lastAutoBackupRef.current || 0;
+      if (now - last < INTERVAL_MS) return;
+
+      try {
+        await backupToFirestore(userId, { gallery }, firebaseRuntimeConfig);
+        const ts = Date.now();
+        lastAutoBackupRef.current = ts;
+        setLastFirebaseBackupTimeState(ts);
+        loadFromDB('indigo_app_data_core').then((core: any) => {
+          if (core) saveToDB('indigo_app_data_core', { ...core, lastFirebaseBackupTime: ts });
+        }).catch(() => {});
+        addToast({ title: 'Auto-backup complete', message: `App data backed up to Firebase (${autoBackupSchedule} schedule).`, type: 'success' });
+        showNativeNotification(`${aiProfile.name} — Auto-backup complete`, {
+          body: 'Your Indigo AI data was backed up to Firebase automatically.',
+          icon: '/icon-192.png',
+        });
+      } catch (e) {
+        console.error('Auto-backup failed:', e);
+      }
+    };
+
+    // Check immediately on mount, then every 10 minutes
+    checkAndBackup();
+    const id = setInterval(checkAndBackup, 10 * 60 * 1000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, autoBackupSchedule, userId, firebaseApiKey, firebaseProjectId, firebaseAppId]);
 
   // Proactive Message Trigger
   useEffect(() => {
@@ -1173,6 +1224,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }).catch(() => {});
   };
 
+  const setAutoBackupSchedule = (s: 'off' | 'daily' | 'weekly') => {
+    setAutoBackupScheduleState(s);
+    loadFromDB('indigo_app_data_core').then((core: any) => {
+      if (core) saveToDB('indigo_app_data_core', { ...core, autoBackupSchedule: s });
+    }).catch(() => {});
+  };
+
   const setAnthropicApiKey = (key: string | null) => {
     setAnthropicApiKeyState(key);
   };
@@ -1209,6 +1267,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const firebaseGalleryBackup = async (onProgress?: (done: number, total: number) => void): Promise<number> => {
     if (!userId) throw new Error("Set a User ID in Cloud Sync settings before backing up the gallery.");
     return uploadGalleryToFirebaseStorage(userId, gallery, firebaseRuntimeConfig, onProgress);
+  };
+
+  const firebaseGalleryRestore = async (onProgress?: (done: number, total: number) => void): Promise<number> => {
+    if (!userId) throw new Error("Set a User ID in Cloud Sync settings before restoring the gallery.");
+    const restored = await restoreGalleryFromFirebaseStorage(userId, firebaseRuntimeConfig, onProgress);
+    // Add each restored image to the local gallery (skip if already present by id)
+    const existingIds = new Set(gallery.map((g: any) => g.id));
+    let added = 0;
+    for (const item of restored) {
+      if (!existingIds.has(item.id)) {
+        addToGallery({ id: item.id, url: item.url, prompt: item.prompt || '', provider: item.provider || 'Firebase Storage', createdAt: Date.now() } as any);
+        added++;
+      }
+    }
+    return added;
   };
 
   const clearAllToasts = () => {
@@ -1774,7 +1847,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       userId, setUserId, isSyncing, setIsSyncing,
       exportGalleryData, exportGalleryChunks, importGalleryData, importGalleryChunks, syncGalleryToCloud, restoreGalleryFromCloud, restoreGalleryFromDrive,
       updateAIProfile, fetchWithRetry, clearAllToasts,
-      firebaseBackup, firebaseRestore, firebaseGalleryBackup,
+      firebaseBackup, firebaseRestore, firebaseGalleryBackup, firebaseGalleryRestore,
+      autoBackupSchedule, setAutoBackupSchedule,
     }}>
       {!isLoaded ? (
         <div className="flex h-screen flex-col items-center justify-center bg-indigo-50 dark:bg-indigo-950 p-4 text-center">

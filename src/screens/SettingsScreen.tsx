@@ -36,7 +36,7 @@ const SettingsScreen: React.FC = () => {
     syncFrequency, setSyncFrequency,
     updateAIProfile,
     isDebuggerEnabled, setIsDebuggerEnabled,
-    firebaseBackup, firebaseRestore, firebaseGalleryBackup,
+    firebaseBackup, firebaseRestore, firebaseGalleryBackup, firebaseGalleryRestore,
     firebaseApiKey, firebaseAuthDomain, firebaseProjectId,
     firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId,
     firebaseVapidKey, firebaseServiceAccountKey,
@@ -44,6 +44,7 @@ const SettingsScreen: React.FC = () => {
     lastCloudSyncTime, setLastCloudSyncTime,
     lastFirebaseBackupTime, setLastFirebaseBackupTime,
     lastGalleryBackupTime, setLastGalleryBackupTime,
+    autoBackupSchedule, setAutoBackupSchedule,
     gallery,
   } = useApp();
 
@@ -68,6 +69,8 @@ const SettingsScreen: React.FC = () => {
   const [isFirebaseRestoring,  setIsFirebaseRestoring]  = useState(false);
   const [isGalleryBackingUp,   setIsGalleryBackingUp]   = useState(false);
   const [galleryBackupProgress, setGalleryBackupProgress] = useState<{done: number; total: number} | null>(null);
+  const [isGalleryRestoring,   setIsGalleryRestoring]   = useState(false);
+  const [galleryRestoreProgress, setGalleryRestoreProgress] = useState<{done: number; total: number} | null>(null);
 
   // Local state for Firebase config fields (never bind inputs directly to context state)
   const [localFbApiKey,       setLocalFbApiKey]       = useState(firebaseApiKey       || '');
@@ -339,6 +342,53 @@ const SettingsScreen: React.FC = () => {
       setIsGalleryBackingUp(false);
       setGalleryBackupProgress(null);
     }
+  };
+
+  const handleGalleryFirebaseRestore = async () => {
+    if (!localFbApiKey || !localFbProjectId || !localFbAppId) {
+      addToast({ title: 'Firebase not configured', message: 'Fill in API Key, Project ID and App ID in Firebase Configuration and save first.', type: 'error' });
+      return;
+    }
+    if (!userId) {
+      addToast({ title: 'User ID required', message: 'Set a User ID in Cloud Sync before restoring.', type: 'error' });
+      return;
+    }
+    if (!localFbStorageBucket) {
+      addToast({ title: 'Storage Bucket required', message: 'Fill in the Firebase Storage Bucket field to restore gallery images.', type: 'error' });
+      return;
+    }
+    setIsGalleryRestoring(true);
+    setGalleryRestoreProgress(null);
+    addToast({ title: 'Gallery restore starting…', message: 'Downloading images from Firebase Storage…', type: 'info' });
+    try {
+      const added = await firebaseGalleryRestore((done, total) => {
+        setGalleryRestoreProgress({ done, total });
+      });
+      addToast({
+        title: 'Gallery restored',
+        message: added > 0
+          ? `${added} new image(s) added to your gallery.`
+          : 'No new images — all backed-up images are already in your gallery.',
+        type: 'success',
+      });
+    } catch (e: any) {
+      addToast({ title: 'Gallery restore failed', message: e.message || 'Could not restore gallery from Firebase.', type: 'error' });
+    } finally {
+      setIsGalleryRestoring(false);
+      setGalleryRestoreProgress(null);
+    }
+  };
+
+  // Format next auto-backup time
+  const nextBackupIn = (): string | null => {
+    if (autoBackupSchedule === 'off' || !lastFirebaseBackupTime) return null;
+    const INTERVAL = autoBackupSchedule === 'daily' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+    const due = lastFirebaseBackupTime + INTERVAL;
+    const diff = due - Date.now();
+    if (diff <= 0) return 'due now';
+    if (diff < 3_600_000) return `${Math.ceil(diff / 60_000)}m`;
+    if (diff < 86_400_000) return `${Math.ceil(diff / 3_600_000)}h`;
+    return `${Math.ceil(diff / 86_400_000)}d`;
   };
 
   const handleNotificationToggle = async () => {
@@ -1019,26 +1069,79 @@ const SettingsScreen: React.FC = () => {
               <div className="border-t border-indigo-100 dark:border-indigo-800 pt-3">
                 <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Gallery Images (Firebase Storage)</p>
                 <p className="text-xs text-indigo-500 dark:text-indigo-400 mb-2">
-                  Uploads each gallery image individually to Firebase Storage. Requires <strong>Storage Bucket</strong> to be filled in above.
-                  {gallery.length > 0 ? ` You have ${gallery.length} image(s) in your gallery.` : ' Your gallery is currently empty.'}
+                  Upload/download individual gallery images to Firebase Storage. Requires <strong>Storage Bucket</strong> to be configured above.
+                  {gallery.length > 0 ? ` You have ${gallery.length} image(s) in your local gallery.` : ' Your gallery is currently empty.'}
                 </p>
-                <button
-                  onClick={handleGalleryFirebaseBackup}
-                  disabled={isGalleryBackingUp || !userId || gallery.length === 0}
-                  data-testid="firebase-gallery-backup-btn"
-                  className="w-full py-2.5 bg-indigo-500 text-white rounded-xl font-medium hover:bg-indigo-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
-                  {isGalleryBackingUp ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      {galleryBackupProgress
-                        ? `Uploading ${galleryBackupProgress.done} / ${galleryBackupProgress.total}…`
-                        : 'Preparing…'}
-                    </>
-                  ) : 'Backup Gallery to Firebase Storage'}
-                </button>
-                {lastGalleryBackupTime && (
-                  <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-1 text-center">
-                    Last gallery backup: {timeAgo(lastGalleryBackupTime)}
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Backup */}
+                  <div>
+                    <button
+                      onClick={handleGalleryFirebaseBackup}
+                      disabled={isGalleryBackingUp || !userId || gallery.length === 0}
+                      data-testid="firebase-gallery-backup-btn"
+                      className="w-full py-2.5 bg-indigo-500 text-white rounded-xl font-medium hover:bg-indigo-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
+                      {isGalleryBackingUp ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          {galleryBackupProgress
+                            ? `Uploading ${galleryBackupProgress.done} / ${galleryBackupProgress.total}…`
+                            : 'Preparing…'}
+                        </>
+                      ) : 'Backup Gallery'}
+                    </button>
+                    {lastGalleryBackupTime && (
+                      <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-1 text-center">
+                        Last backup: {timeAgo(lastGalleryBackupTime)}
+                      </p>
+                    )}
+                  </div>
+                  {/* Restore */}
+                  <div>
+                    <button
+                      onClick={handleGalleryFirebaseRestore}
+                      disabled={isGalleryRestoring || !userId}
+                      data-testid="firebase-gallery-restore-btn"
+                      className="w-full py-2.5 bg-white dark:bg-indigo-900 border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
+                      {isGalleryRestoring ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          {galleryRestoreProgress
+                            ? `${galleryRestoreProgress.done} / ${galleryRestoreProgress.total}`
+                            : 'Fetching…'}
+                        </>
+                      ) : 'Restore Gallery'}
+                    </button>
+                    <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-1 text-center">Downloads images back to this device</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Auto-backup schedule */}
+              <div className="border-t border-indigo-100 dark:border-indigo-800 pt-3">
+                <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Auto-Backup Schedule (App Data)</p>
+                <p className="text-xs text-indigo-500 dark:text-indigo-400 mb-2">
+                  Automatically backs up app data to Firestore in the background. Requires Firebase to be configured and a User ID set.
+                  A push notification is sent on completion if notifications are enabled.
+                </p>
+                <div className="flex gap-2">
+                  {(['off', 'daily', 'weekly'] as const).map(opt => (
+                    <button
+                      key={opt}
+                      data-testid={`auto-backup-${opt}`}
+                      onClick={() => setAutoBackupSchedule(opt)}
+                      className={`flex-1 py-2 rounded-xl border text-sm font-medium transition-colors capitalize
+                        ${autoBackupSchedule === opt
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-white dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-800'}`}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+                {autoBackupSchedule !== 'off' && (
+                  <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-1.5">
+                    {lastFirebaseBackupTime
+                      ? `Last backup: ${timeAgo(lastFirebaseBackupTime)} · Next in: ${nextBackupIn() ?? '…'}`
+                      : 'First backup will run shortly after the app loads.'}
                   </p>
                 )}
               </div>

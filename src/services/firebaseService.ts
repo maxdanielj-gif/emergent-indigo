@@ -113,7 +113,7 @@ export async function uploadGalleryToFirebaseStorage(
   if (validItems.length === 0) throw new Error("No local gallery images found to upload.");
 
   let uploaded = 0;
-  const manifest: Array<{ id: string; path: string; prompt?: string; provider?: string }> = [];
+  const manifest: Array<{ id: string; path: string; downloadUrl: string; prompt?: string; provider?: string }> = [];
 
   for (let i = 0; i < validItems.length; i++) {
     const item = validItems[i];
@@ -125,7 +125,9 @@ export async function uploadGalleryToFirebaseStorage(
 
     const fileRef = storageRef(storage, path);
     await uploadString(fileRef, base64, 'base64', { contentType: `image/${ext}` });
-    manifest.push({ id: itemId, path, prompt: item.prompt, provider: item.provider });
+    // Store the download URL so restore doesn't need to re-derive it
+    const downloadUrl = await getDownloadURL(fileRef);
+    manifest.push({ id: itemId, path, downloadUrl, prompt: item.prompt, provider: item.provider });
     uploaded++;
 
     if (onProgress) onProgress(uploaded, validItems.length);
@@ -140,4 +142,54 @@ export async function uploadGalleryToFirebaseStorage(
   });
 
   return uploaded;
+}
+
+// ── Restore gallery images from Firebase Storage ──────────────────────────────
+export async function restoreGalleryFromFirebaseStorage(
+  userId: string,
+  runtime?: FirebaseRuntimeConfig,
+  onProgress?: (done: number, total: number) => void,
+): Promise<Array<{ id: string; url: string; prompt?: string; provider?: string }>> {
+  if (!userId?.trim()) throw new Error("A User ID is required. Set one in Settings → Cloud Sync.");
+
+  const db   = getDb(runtime);
+  const snap = await getDoc(doc(db, 'indigo_gallery_manifests', userId.trim()));
+  if (!snap.exists()) throw new Error("No gallery backup found for this user ID. Back up your gallery first.");
+
+  const data  = snap.data();
+  const items = (data.items as Array<{ id: string; path: string; downloadUrl?: string; prompt?: string; provider?: string }>) || [];
+
+  if (items.length === 0) throw new Error("The gallery backup exists but contains no images.");
+
+  const app = getApp(runtime);
+  if (!currentStorage) currentStorage = getStorage(app);
+  const storage = currentStorage;
+
+  const restored: Array<{ id: string; url: string; prompt?: string; provider?: string }> = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    // Prefer the stored downloadUrl; fall back to deriving from Storage path
+    let downloadUrl = item.downloadUrl;
+    if (!downloadUrl) {
+      const fileRef = storageRef(storage, item.path);
+      downloadUrl = await getDownloadURL(fileRef);
+    }
+
+    // Fetch the image and convert to a local data URL
+    const response = await fetch(downloadUrl);
+    if (!response.ok) throw new Error(`Failed to download image ${i + 1}: HTTP ${response.status}`);
+    const blob    = await response.blob();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Failed to read image data'));
+      reader.readAsDataURL(blob);
+    });
+
+    restored.push({ id: item.id, url: dataUrl, prompt: item.prompt, provider: item.provider });
+    if (onProgress) onProgress(i + 1, items.length);
+  }
+
+  return restored;
 }
