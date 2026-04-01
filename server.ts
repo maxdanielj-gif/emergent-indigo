@@ -1604,7 +1604,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // ── Server start and WebSocket TTS proxy ──────────────────────────────────────
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+    const vite = await createViteServer({ server: { middlewareMode: true, allowedHosts: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
     const distPaths = [
