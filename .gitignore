@@ -9,3 +9,7 @@ memory/test_credentials.md
 *.env
 *.env.*
 !.env.example
+-e 
+# Environment files
+*.env
+*.env.*
