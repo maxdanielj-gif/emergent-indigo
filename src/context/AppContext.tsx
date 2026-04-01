@@ -1130,7 +1130,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
   const setMongoUri = (uri: string | null) => {
     setMongoUriState(uri);
-    saveData({ mongoUri: uri });
+    // Directly patch IDB because saveData closure has stale mongoUri at call time
+    loadFromDB('indigo_app_data_core').then((core: any) => {
+      if (core) saveToDB('indigo_app_data_core', { ...core, mongoUri: uri });
+    }).catch(() => {});
   };
 
   const setAnthropicApiKey = (key: string | null) => {
