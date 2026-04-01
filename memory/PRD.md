@@ -52,19 +52,21 @@ Import the GitHub repo (maxdanielj-gif/indigo) as-is and add tweaks:
 
 ### P0 (Done)
 - [x] App running in Emergent environment
-- [x] Stability AI image generation
+- [x] Stability AI image generation + img2img (Apr 2026)
 - [x] MongoDB sync persistence
-- [x] Firebase backup/restore
+- [x] Firebase backup/restore (full data, with MongoDB restore)
 - [x] OpenRouter LLM integration (Apr 2026)
-- [x] Cartesia TTS integration (Apr 2026)
+- [x] Cartesia TTS integration with speed/emotion controls (Apr 2026)
+- [x] Firebase config inputs fixed (local state, batch save)
+- [x] LLM max tokens slider, ElevenLabs voice quality sliders
+- [x] Stability AI style presets, output format, negative prompt, img2img
+- [x] MongoDB JSON export/import tool
+- [x] UI toast notifications for Settings saves
 
 ### P1 (Next)
-- [ ] Full Firebase restore (import backed-up data into app state)
-- [ ] Gallery images chunked backup to Firebase Storage
-- [ ] Stability AI img2img (image-to-image) support
+- [ ] Freepik img2img structure reference UI (backend ready, needs frontend)
+- [ ] WaveSpeed reference image upload UI clarity
 
 ### P2 (Future)
-- [ ] Stability AI video generation (Stable Video Diffusion)
-- [ ] MongoDB backup export/import tool
+- [ ] Gallery chunked backup to Firebase Storage
 - [ ] Multi-user cloud sync with userId isolation
-- [ ] UI toast notifications for Settings key saves
