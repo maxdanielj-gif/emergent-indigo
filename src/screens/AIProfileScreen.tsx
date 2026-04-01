@@ -170,7 +170,10 @@ const AIProfileScreen: React.FC = () => {
       }
     } else if (voiceProvider === 'elevenlabs' && elevenLabsVoiceId) {
       try {
-        const audioBlob = await generateElevenLabsSpeech(text, elevenLabsVoiceId, elevenLabsApiKey, elevenLabsModelId);
+        const audioBlob = await generateElevenLabsSpeech(text, elevenLabsVoiceId, elevenLabsApiKey, elevenLabsModelId, {
+          stability: elStability, similarityBoost: elSimilarity, style: elStyle,
+          useSpeakerBoost: elSpeakerBoost, speakingRate: elSpeakingRate,
+        });
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
         audio.onended = () => { setIsTestingVoice(false); URL.revokeObjectURL(audioUrl); };
@@ -188,7 +191,7 @@ const AIProfileScreen: React.FC = () => {
         return;
       }
       try {
-        const audioBlob = await generateCartesiaSpeech(text, cVoiceId, cartesiaApiKey);
+        const audioBlob = await generateCartesiaSpeech(text, cVoiceId, cartesiaApiKey, 'en', cartesiaSpeed, cartesiaEmotion ? [cartesiaEmotion] : undefined);
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
         audio.onended = () => { setIsTestingVoice(false); URL.revokeObjectURL(audioUrl); };
@@ -269,6 +272,14 @@ const AIProfileScreen: React.FC = () => {
     setAiCanGenerateSpeech(aiProfile.aiCanGenerateSpeech ?? true);
     setTextOnlyMode(aiProfile.textOnlyMode ?? false);
     setElevenLabsModelId(aiProfile.elevenLabsModelId || 'eleven_v3');
+    setElStability(aiProfile.elStability     ?? 0.5);
+    setElSimilarity(aiProfile.elSimilarity   ?? 0.75);
+    setElStyle(aiProfile.elStyle             ?? 0);
+    setElSpeakerBoost(aiProfile.elSpeakerBoost ?? true);
+    setElSpeakingRate(aiProfile.elSpeakingRate  ?? 1.0);
+    setCartesiaSpeed(aiProfile.cartesiaSpeed   ?? 1.0);
+    setCartesiaEmotion(aiProfile.cartesiaEmotion ?? '');
+    setMaxTokens(aiProfile.maxTokens ?? 2048);
     setKnowsItsAI(aiProfile.knowsItsAI ?? true);
     setReferenceImage(aiProfile.referenceImage);
     setModel(validateModel(aiProfile.model));
@@ -334,6 +345,7 @@ const AIProfileScreen: React.FC = () => {
       temperature,
       topK,
       topP,
+      maxTokens,
       timeAwareness,
       ambientMode: ambientModeState,
       ambientFrequency: ambientFrequencyState,
@@ -350,6 +362,13 @@ const AIProfileScreen: React.FC = () => {
       aiCanGenerateSpeech,
       textOnlyMode,
       elevenLabsModelId,
+      elStability,
+      elSimilarity,
+      elStyle,
+      elSpeakerBoost,
+      elSpeakingRate,
+      cartesiaSpeed,
+      cartesiaEmotion,
       aiCanUseTools: aiProfile.aiCanUseTools,
       aiCanBrowse: aiProfile.aiCanBrowse,
       chatHistory: aiProfile.chatHistory,
@@ -360,7 +379,7 @@ const AIProfileScreen: React.FC = () => {
     addToast({ title: "Persona Saved", message: "AI Persona settings saved successfully!", type: "success" });
   };
 
-  const handleSaveAsNew = () => {
+  const handleSaveAsNew = async () => {
     const newId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
     const newProfile: AIProfile = {
       id: newId,
@@ -713,9 +732,22 @@ const AIProfileScreen: React.FC = () => {
     aiProfile.voiceProvider === 'cartesia' ? (aiProfile.asyncVoiceId || '') : ''
   );
   const [cartesiaCustomVoiceId, setCartesiaCustomVoiceId] = useState<string>('');
+  const [cartesiaSpeed, setCartesiaSpeed]       = useState<number>(aiProfile.cartesiaSpeed   ?? 1.0);
+  const [cartesiaEmotion, setCartesiaEmotion]   = useState<string>(aiProfile.cartesiaEmotion  ?? '');
+
+  // ElevenLabs voice quality settings
+  const [elStability,      setElStability]      = useState<number>(aiProfile.elStability      ?? 0.5);
+  const [elSimilarity,     setElSimilarity]     = useState<number>(aiProfile.elSimilarity     ?? 0.75);
+  const [elStyle,          setElStyle]          = useState<number>(aiProfile.elStyle           ?? 0);
+  const [elSpeakerBoost,   setElSpeakerBoost]   = useState<boolean>(aiProfile.elSpeakerBoost  ?? true);
+  const [elSpeakingRate,   setElSpeakingRate]   = useState<number>(aiProfile.elSpeakingRate   ?? 1.0);
+
   const [openRouterCustomModel, setOpenRouterCustomModel] = useState<string>(
     model && model.includes('/') ? model : ''
   );
+
+  // LLM max tokens
+  const [maxTokens, setMaxTokens] = useState<number>(aiProfile.maxTokens ?? 2048);
 
   // Voice clone state
   const [showClonePanel, setShowClonePanel] = useState(false);
@@ -1449,6 +1481,23 @@ const AIProfileScreen: React.FC = () => {
                                     className="w-full h-2 bg-indigo-200 dark:bg-indigo-800 rounded-lg appearance-none cursor-pointer accent-indigo-600 mt-1"
                                 />
                             </div>
+                            <div>
+                                <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Max Tokens: {maxTokens}</label>
+                                <input
+                                    type="range"
+                                    min="256"
+                                    max="8192"
+                                    step="256"
+                                    value={maxTokens}
+                                    onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                                    className="w-full h-2 bg-indigo-200 dark:bg-indigo-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                                    data-testid="max-tokens-slider"
+                                />
+                                <div className="flex justify-between text-[10px] text-indigo-400 dark:text-indigo-500 mt-1">
+                                    <span>Short (256)</span>
+                                    <span>Long (8192)</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1935,6 +1984,36 @@ const AIProfileScreen: React.FC = () => {
                                             Find voice IDs on your ElevenLabs dashboard. Works for any voice including ones you've created there.
                                         </p>
                                     </div>
+                                    {/* ElevenLabs voice quality settings */}
+                                    <div className="border-t border-indigo-100 dark:border-indigo-800 pt-3 space-y-3">
+                                        <label className="block text-xs font-semibold text-indigo-700 dark:text-indigo-300">Voice Quality Settings</label>
+                                        {[
+                                          { label: `Stability: ${elStability.toFixed(2)}`, val: elStability, set: setElStability, min: 0, max: 1, step: 0.05, hint: 'Higher = more consistent but less expressive' },
+                                          { label: `Similarity Boost: ${elSimilarity.toFixed(2)}`, val: elSimilarity, set: setElSimilarity, min: 0, max: 1, step: 0.05, hint: 'How closely the AI follows the original voice' },
+                                          { label: `Style: ${elStyle.toFixed(2)}`, val: elStyle, set: setElStyle, min: 0, max: 1, step: 0.05, hint: 'Style exaggeration — higher values are more dramatic' },
+                                          { label: `Speaking Rate: ${elSpeakingRate.toFixed(2)}x`, val: elSpeakingRate, set: setElSpeakingRate, min: 0.7, max: 1.2, step: 0.05, hint: 'Speech speed multiplier' },
+                                        ].map(({ label, val, set, min, max, step, hint }) => (
+                                          <div key={label}>
+                                            <div className="flex items-center gap-1 mb-1">
+                                              <label className="text-[11px] font-medium text-indigo-700 dark:text-indigo-300">{label}</label>
+                                              <div className="relative group" tabIndex={0}>
+                                                <HelpCircle className="w-3 h-3 text-indigo-400 cursor-help" />
+                                                <div className="absolute bottom-full left-0 mb-1 w-44 p-2 bg-indigo-800 text-white text-[10px] rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">{hint}</div>
+                                              </div>
+                                            </div>
+                                            <input type="range" min={min} max={max} step={step} value={val}
+                                              onChange={(e) => set(parseFloat(e.target.value) as any)}
+                                              className="w-full h-1.5 bg-indigo-200 dark:bg-indigo-800 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
+                                          </div>
+                                        ))}
+                                        <div className="flex items-center justify-between">
+                                          <label className="text-[11px] font-medium text-indigo-700 dark:text-indigo-300">Speaker Boost</label>
+                                          <button onClick={() => setElSpeakerBoost(!elSpeakerBoost)}
+                                            className={`w-8 h-5 rounded-full transition-colors ${elSpeakerBoost ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-800'}`}>
+                                            <div className={`w-3 h-3 rounded-full bg-white transition-transform mx-auto ${elSpeakerBoost ? 'translate-x-1.5' : '-translate-x-1.5'}`} />
+                                          </button>
+                                        </div>
+                                    </div>
                                 </div>
                             ) : voiceProvider === 'cartesia' ? (
                                 <div className="p-4 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-lg space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -2007,6 +2086,33 @@ const AIProfileScreen: React.FC = () => {
                                         <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-1">
                                             Find more voices at <a href="https://play.cartesia.ai" target="_blank" rel="noreferrer" className="underline">play.cartesia.ai</a>. Requires a Cartesia API key in Settings.
                                         </p>
+                                    </div>
+
+                                    {/* Cartesia speed & emotion settings */}
+                                    <div className="border-t border-indigo-100 dark:border-indigo-800 pt-3 space-y-3">
+                                        <label className="block text-xs font-semibold text-indigo-700 dark:text-indigo-300">Voice Settings</label>
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-indigo-700 dark:text-indigo-300 mb-1">Speed: {cartesiaSpeed.toFixed(2)}x</label>
+                                            <input type="range" min="0.5" max="2.0" step="0.05" value={cartesiaSpeed}
+                                                onChange={(e) => setCartesiaSpeed(parseFloat(e.target.value))}
+                                                className="w-full h-1.5 bg-indigo-200 dark:bg-indigo-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                                                data-testid="cartesia-speed-slider" />
+                                            <div className="flex justify-between text-[10px] text-indigo-400 mt-0.5"><span>Slow (0.5x)</span><span>Fast (2x)</span></div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-indigo-700 dark:text-indigo-300 mb-1">Emotion</label>
+                                            <select value={cartesiaEmotion} onChange={(e) => setCartesiaEmotion(e.target.value)}
+                                                className="w-full p-1.5 border border-indigo-300 dark:border-indigo-700 rounded-md bg-white dark:bg-indigo-900 text-indigo-900 dark:text-indigo-100 text-xs"
+                                                data-testid="cartesia-emotion-select">
+                                                <option value="">None (neutral)</option>
+                                                <option value="positivity:high">Happy / Positive</option>
+                                                <option value="positivity:low">Sad / Negative</option>
+                                                <option value="curiosity:high">Curious</option>
+                                                <option value="surprise:high">Surprised</option>
+                                                <option value="anger:high">Angry</option>
+                                                <option value="sadness:high">Deeply Sad</option>
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
                             ) : (

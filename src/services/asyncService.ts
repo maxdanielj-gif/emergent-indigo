@@ -134,14 +134,28 @@ export const generateElevenLabsSpeech = async (
   text: string,
   voiceId: string,
   apiKey?: string | null,
-  modelId?: string
+  modelId?: string,
+  voiceSettings?: {
+    stability?: number;
+    similarityBoost?: number;
+    style?: number;
+    useSpeakerBoost?: boolean;
+    speakingRate?: number;
+  }
 ): Promise<Blob> => {
   if (!apiKey) throw new Error("ElevenLabs API key not set. Add it in Settings.");
 
   const res = await fetch('/api/tts/elevenlabs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voiceId, apiKey, modelId }),
+    body: JSON.stringify({
+      text, voiceId, apiKey, modelId,
+      stability:       voiceSettings?.stability,
+      similarityBoost: voiceSettings?.similarityBoost,
+      style:           voiceSettings?.style,
+      useSpeakerBoost: voiceSettings?.useSpeakerBoost,
+      speakingRate:    voiceSettings?.speakingRate,
+    }),
   });
 
   if (!res.ok) {
@@ -182,14 +196,16 @@ export const generateCartesiaSpeech = async (
   text: string,
   voiceId: string,
   apiKey?: string | null,
-  language = 'en'
+  language = 'en',
+  speed?: number,
+  emotions?: string[]
 ): Promise<Blob> => {
   if (!apiKey) throw new Error("Cartesia API key not set. Add it in Settings.");
 
   const res = await fetch('/api/tts/cartesia', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voiceId, apiKey, language }),
+    body: JSON.stringify({ text, voiceId, apiKey, language, speed, emotions }),
   });
 
   if (!res.ok) {

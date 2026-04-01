@@ -244,7 +244,11 @@ const ChatScreen: React.FC = () => {
 
     if (aiProfile.voiceProvider === 'elevenlabs' && aiProfile.asyncVoiceId) {
       try {
-        const blob = await generateElevenLabsSpeech(text, aiProfile.asyncVoiceId, elevenLabsApiKey, aiProfile.elevenLabsModelId || 'eleven_v3');
+        const blob = await generateElevenLabsSpeech(text, aiProfile.asyncVoiceId, elevenLabsApiKey, aiProfile.elevenLabsModelId || 'eleven_v3', {
+          stability: aiProfile.elStability, similarityBoost: aiProfile.elSimilarity,
+          style: aiProfile.elStyle, useSpeakerBoost: aiProfile.elSpeakerBoost,
+          speakingRate: aiProfile.elSpeakingRate,
+        });
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         audio.onended = () => { onEnd(); URL.revokeObjectURL(url); };
@@ -255,7 +259,7 @@ const ChatScreen: React.FC = () => {
       }
     } else if (aiProfile.voiceProvider === 'cartesia' && aiProfile.asyncVoiceId) {
       try {
-        const blob = await generateCartesiaSpeech(text, aiProfile.asyncVoiceId, cartesiaApiKey);
+        const blob = await generateCartesiaSpeech(text, aiProfile.asyncVoiceId, cartesiaApiKey, 'en', aiProfile.cartesiaSpeed, aiProfile.cartesiaEmotion ? [aiProfile.cartesiaEmotion] : undefined);
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         audio.onended = () => { onEnd(); URL.revokeObjectURL(url); };

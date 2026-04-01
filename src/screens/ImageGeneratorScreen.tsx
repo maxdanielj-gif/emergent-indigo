@@ -208,6 +208,11 @@ const ImageGeneratorScreen: React.FC = () => {
   const [stabilitySeed,        setStabilitySeed]        = useState('');
   const [stabilityResult,      setStabilityResult]      = useState<string | null>(null);
   const [stabilityLoading,     setStabilityLoading]     = useState(false);
+  const [stabilityNegPrompt,   setStabilityNegPrompt]   = useState('');
+  const [stabilityStylePreset, setStabilityStylePreset] = useState('');
+  const [stabilityOutputFmt,   setStabilityOutputFmt]   = useState('png');
+  const [stabilityInitImage,   setStabilityInitImage]   = useState<string | null>(null);
+  const [stabilityInitStrength,setStabilityInitStrength]= useState(0.65);
 
   const pollRef    = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -405,13 +410,16 @@ const ImageGeneratorScreen: React.FC = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt:         prompt.trim(),
-            negativePrompt: negPrompt.trim() || undefined,
-            aspectRatio:    stabilityAspectRatio,
-            outputFormat:   'png',
-            model:          stabilityModel,
-            seed:           stabilitySeed ? Number(stabilitySeed) : undefined,
-            apiKey:         stabilityApiKey || undefined,
+            prompt:           prompt.trim(),
+            negativePrompt:   stabilityNegPrompt.trim() || undefined,
+            aspectRatio:      stabilityInitImage ? undefined : stabilityAspectRatio,
+            outputFormat:     stabilityOutputFmt,
+            model:            stabilityModel,
+            seed:             stabilitySeed ? Number(stabilitySeed) : undefined,
+            stylePreset:      stabilityStylePreset || undefined,
+            initImage:        stabilityInitImage || undefined,
+            initImageStrength:stabilityInitImage ? stabilityInitStrength : undefined,
+            apiKey:           stabilityApiKey || undefined,
           }),
         });
         const data = await res.json();
@@ -893,6 +901,7 @@ const ImageGeneratorScreen: React.FC = () => {
           {/* ── STABILITY AI controls ── */}
           {provider === 'stability' && (
             <div className="space-y-3">
+              {/* Model + Aspect Ratio */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Model</label>
@@ -902,22 +911,84 @@ const ImageGeneratorScreen: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Aspect Ratio</label>
+                  <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                    Aspect Ratio {stabilityInitImage && <span className="text-indigo-400">(ignored in img2img)</span>}
+                  </label>
                   <select value={stabilityAspectRatio} onChange={e => setStabilityAspectRatio(e.target.value)}
-                    className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                    disabled={!!stabilityInitImage}
+                    className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs disabled:opacity-50">
                     {STABILITY_ASPECT_RATIOS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 </div>
               </div>
+
+              {/* Output format + Style preset */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Output Format</label>
+                  <select value={stabilityOutputFmt} onChange={e => setStabilityOutputFmt(e.target.value)}
+                    className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                    <option value="png">PNG (lossless)</option>
+                    <option value="jpeg">JPEG (smaller)</option>
+                    <option value="webp">WebP (modern)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Style Preset</label>
+                  <select value={stabilityStylePreset} onChange={e => setStabilityStylePreset(e.target.value)}
+                    className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs">
+                    <option value="">None</option>
+                    <option value="photographic">Photographic</option>
+                    <option value="anime">Anime</option>
+                    <option value="digital-art">Digital Art</option>
+                    <option value="comic-book">Comic Book</option>
+                    <option value="fantasy-art">Fantasy Art</option>
+                    <option value="cinematic">Cinematic</option>
+                    <option value="3d-model">3D Model</option>
+                    <option value="pixel-art">Pixel Art</option>
+                    <option value="line-art">Line Art</option>
+                    <option value="neon-punk">Neon Punk</option>
+                    <option value="isometric">Isometric</option>
+                    <option value="origami">Origami</option>
+                    <option value="low-poly">Low Poly</option>
+                    <option value="tile-texture">Tile Texture</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Negative prompt */}
               <div>
-                <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">
-                  Seed <span className="font-normal text-indigo-400">(optional)</span>
-                </label>
-                <input type="number" value={stabilitySeed} onChange={e => setStabilitySeed(e.target.value)}
-                  placeholder="Leave empty for random"
-                  min={0} max={4294967295}
+                <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Negative Prompt <span className="font-normal text-indigo-400">(optional)</span></label>
+                <input type="text" value={stabilityNegPrompt} onChange={e => setStabilityNegPrompt(e.target.value)}
+                  placeholder="What to avoid — e.g. blurry, extra limbs, watermark"
                   className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs focus:ring-2 focus:ring-indigo-500 outline-none" />
               </div>
+
+              {/* Seed */}
+              <div>
+                <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Seed <span className="font-normal text-indigo-400">(optional)</span></label>
+                <input type="number" value={stabilitySeed} onChange={e => setStabilitySeed(e.target.value)}
+                  placeholder="Leave empty for random" min={0} max={4294967295}
+                  className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs focus:ring-2 focus:ring-indigo-500 outline-none" />
+              </div>
+
+              {/* Image to Image */}
+              <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-2">
+                <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Image-to-Image (optional)</p>
+                <ImagePickerButton label="Init Image" value={stabilityInitImage} onChange={setStabilityInitImage} />
+                {stabilityInitImage && (
+                  <div>
+                    <label className="block text-[11px] font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                      Strength: {stabilityInitStrength.toFixed(2)} <span className="font-normal text-indigo-400">(lower = closer to init image)</span>
+                    </label>
+                    <input type="range" min="0.1" max="1.0" step="0.05" value={stabilityInitStrength}
+                      onChange={e => setStabilityInitStrength(parseFloat(e.target.value))}
+                      className="w-full h-1.5 bg-indigo-200 dark:bg-indigo-800 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
+                  </div>
+                )}
+                <p className="text-[10px] text-indigo-400">Upload an image as starting point. The prompt guides the transformation.</p>
+              </div>
+
               {/* Result */}
               {stabilityLoading && (
                 <div className="flex items-center gap-2 p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">

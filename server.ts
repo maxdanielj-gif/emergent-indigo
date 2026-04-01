@@ -522,7 +522,7 @@ app.post("/api/tts/generate", express.json(), async (req, res) => {
 
 // ── ElevenLabs TTS ────────────────────────────────────────────────────────────
 app.post("/api/tts/elevenlabs", express.json(), async (req, res) => {
-  const { text, voiceId, apiKey: userApiKey, modelId } = req.body;
+  const { text, voiceId, apiKey: userApiKey, modelId, stability, similarityBoost, style, useSpeakerBoost, speakingRate } = req.body;
   if (!text || !voiceId) return res.status(400).json({ error: "Missing text or voiceId" });
 
   const apiKey = userApiKey || process.env.ELEVENLABS_API_KEY;
@@ -530,6 +530,16 @@ app.post("/api/tts/elevenlabs", express.json(), async (req, res) => {
 
   try {
     const model = modelId || "eleven_v3";
+    const voiceSettings: any = {
+      stability:       stability        ?? 0.5,
+      similarity_boost: similarityBoost ?? 0.75,
+    };
+    if (style            != null) voiceSettings.style             = style;
+    if (useSpeakerBoost  != null) voiceSettings.use_speaker_boost = useSpeakerBoost;
+
+    const body: any = { text, model_id: model, voice_settings: voiceSettings };
+    if (speakingRate != null) body.speaking_rate = speakingRate;
+
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: "POST",
       headers: {
@@ -537,11 +547,7 @@ app.post("/api/tts/elevenlabs", express.json(), async (req, res) => {
         "Content-Type": "application/json",
         "Accept": "audio/mpeg",
       },
-      body: JSON.stringify({
-        text,
-        model_id: model,
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -645,13 +651,23 @@ app.get("/api/tts/elevenlabs/voices", async (req, res) => {
 
 // ── Cartesia TTS ──────────────────────────────────────────────────────────────
 app.post("/api/tts/cartesia", express.json(), async (req, res) => {
-  const { text, voiceId, apiKey: userApiKey, language } = req.body;
+  const { text, voiceId, apiKey: userApiKey, language, speed, emotions } = req.body;
   if (!text || !voiceId) return res.status(400).json({ error: "Missing text or voiceId" });
 
   const apiKey = userApiKey || process.env.CARTESIA_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "Cartesia API key not configured" });
 
   try {
+    const cartesiaBody: any = {
+      model_id: "sonic-3",
+      transcript: text,
+      voice: { mode: "id", id: voiceId },
+      output_format: { container: "mp3", encoding: "mp3", sample_rate: 24000 },
+      language: language || "en",
+    };
+    if (speed    != null) cartesiaBody.speed    = speed;
+    if (emotions?.length) cartesiaBody.emotions = emotions;
+
     const response = await fetch("https://api.cartesia.ai/tts/bytes", {
       method: "POST",
       headers: {
@@ -659,13 +675,7 @@ app.post("/api/tts/cartesia", express.json(), async (req, res) => {
         "Cartesia-Version": "2025-04-16",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model_id: "sonic-3",
-        transcript: text,
-        voice: { mode: "id", id: voiceId },
-        output_format: { container: "mp3", encoding: "mp3", sample_rate: 24000 },
-        language: language || "en",
-      }),
+      body: JSON.stringify(cartesiaBody),
     });
 
     if (!response.ok) {
@@ -861,13 +871,34 @@ app.get("/api/sync/:userId?", (req, res) => {
   res.json(data);
 });
 
+// ── MongoDB Export / Import ──────────────────────────────────────────────────
+app.get("/api/db/export/:userId", (req, res) => {
+  const userId = req.params.userId?.trim();
+  if (!userId) return res.status(400).json({ error: "User ID required" });
+  const data = cloudSyncData[userId];
+  if (!data) return res.status(404).json({ error: "No data found for this user" });
+  res.setHeader("Content-Disposition", `attachment; filename="indigo-backup-${userId.slice(0,8)}-${Date.now()}.json"`);
+  res.setHeader("Content-Type", "application/json");
+  res.send(JSON.stringify({ version: 1, userId, exportedAt: new Date().toISOString(), data }, null, 2));
+});
+
+app.post("/api/db/import", express.json({ limit: "50mb" }), async (req, res) => {
+  const { userId, data } = req.body;
+  if (!userId || !data) return res.status(400).json({ error: "userId and data are required" });
+  cloudSyncData[userId] = data;
+  await saveSyncData();
+  res.json({ success: true, message: "Data imported successfully" });
+});
+
 // ── OpenRouter: chat completion (OpenAI-compatible) ──────────────────────────
 async function callOpenRouterChat(
   systemPrompt: string,
   messages: any[],
   model: string,
   temperature: number,
-  openRouterKey: string
+  openRouterKey: string,
+  maxTokens?: number,
+  topP?: number,
 ): Promise<string> {
   const orMessages = [
     { role: "system", content: systemPrompt },
@@ -885,7 +916,13 @@ async function callOpenRouterChat(
       "HTTP-Referer": process.env.RENDER_EXTERNAL_URL || "http://localhost:3000",
       "X-Title": "Indigo AI",
     },
-    body: JSON.stringify({ model, messages: orMessages, temperature: temperature ?? 0.7, max_tokens: 2048 }),
+    body: JSON.stringify({
+      model,
+      messages: orMessages,
+      temperature: temperature ?? 0.7,
+      max_tokens: maxTokens ?? 2048,
+      ...(topP != null ? { top_p: topP } : {}),
+    }),
   });
 
   if (!res.ok) {
@@ -912,7 +949,7 @@ app.post("/api/chat", async (req, res) => {
   // ── OpenRouter path ───────────────────────────────────────────────────────
   if (useOpenRouter) {
     try {
-      const text = await callOpenRouterChat(systemPrompt, messages, selectedModel, aiProfile.temperature ?? 0.7, openRouterKey);
+      const text = await callOpenRouterChat(systemPrompt, messages, selectedModel, aiProfile.temperature ?? 0.7, openRouterKey, aiProfile.maxTokens, aiProfile.topP);
       return res.json({ content: text, provider: "openrouter" });
     } catch (e: any) {
       console.error("OpenRouter chat error:", e.message);
@@ -969,10 +1006,12 @@ app.post("/api/chat", async (req, res) => {
       async () =>
         await client.messages.create({
           model: validateClaudeModel(useGemini ? undefined : selectedModel),
-          max_tokens: 2048,
+          max_tokens: aiProfile.maxTokens ?? 2048,
           system: systemPrompt,
           messages: claudeMessages,
           temperature: aiProfile.temperature ?? 0.7,
+          ...(aiProfile.topP     != null ? { top_p: aiProfile.topP }    : {}),
+          ...(aiProfile.topK     != null ? { top_k: aiProfile.topK }    : {}),
         })
     );
 
@@ -1322,7 +1361,8 @@ const STABILITY_MODELS: Record<string, string> = {
 app.post("/api/image/stability/generate", express.json({ limit: "20mb" }), async (req, res) => {
   const {
     prompt, negativePrompt, aspectRatio, outputFormat,
-    model, seed, cfgScale,
+    model, seed, cfgScale, stylePreset,
+    initImage, initImageStrength,   // img2img: base64 data URL + strength (0.0–1.0)
     apiKey: userApiKey,
   } = req.body;
 
@@ -1333,21 +1373,44 @@ app.post("/api/image/stability/generate", express.json({ limit: "20mb" }), async
 
   const selectedModel = model || "stable-image-core";
   const endpoint      = STABILITY_MODELS[selectedModel] || "core";
+  const isImg2Img     = !!initImage;
 
   try {
     const form = new FormData();
     form.append("prompt",        prompt.trim());
     form.append("output_format", outputFormat || "png");
     if (negativePrompt?.trim()) form.append("negative_prompt", negativePrompt.trim());
-    if (aspectRatio)            form.append("aspect_ratio",    aspectRatio);
     if (seed !== undefined && seed !== null && seed !== "") form.append("seed", String(seed));
-    if (cfgScale !== undefined) form.append("cfg_scale",      String(cfgScale));
+    if (cfgScale !== undefined) form.append("cfg_scale", String(cfgScale));
+    if (stylePreset)            form.append("style_preset", stylePreset);
+
+    if (isImg2Img) {
+      // Strip data URL prefix and convert to Blob
+      const base64 = initImage.includes(",") ? initImage.split(",")[1] : initImage;
+      const mimeMatch = initImage.match(/data:([^;]+);/);
+      const mime = mimeMatch ? mimeMatch[1] : "image/png";
+      const imgBuffer = Buffer.from(base64, "base64");
+      const imgBlob   = new Blob([imgBuffer], { type: mime });
+      form.append("image", imgBlob, "init.png");
+      // Core uses "fidelity", SD3 uses "strength"
+      const strength = initImageStrength ?? 0.65;
+      if (endpoint === "core") {
+        form.append("fidelity", String(strength));
+      } else {
+        form.append("strength", String(strength));
+      }
+    } else {
+      // Text-to-image only: aspect_ratio is only valid without an init image
+      if (aspectRatio) form.append("aspect_ratio", aspectRatio);
+    }
+
     // SD3 models need model param
     if (endpoint === "sd3" && selectedModel !== "stable-image-core") {
       form.append("model", selectedModel);
     }
 
-    console.log(`Stability AI: endpoint=${endpoint}, model=${selectedModel}, aspect=${aspectRatio}, prompt="${prompt.slice(0, 80)}"`);
+    const mode = isImg2Img ? "img2img" : "txt2img";
+    console.log(`Stability AI: endpoint=${endpoint}, model=${selectedModel}, mode=${mode}, aspect=${isImg2Img ? "n/a" : aspectRatio}, prompt="${prompt.slice(0, 80)}"`);
 
     const response = await fetch(`https://api.stability.ai/v2beta/stable-image/generate/${endpoint}`, {
       method:  "POST",

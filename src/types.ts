@@ -44,12 +44,20 @@ export interface AIProfile {
   aiCanGenerateSpeech?: boolean;
   textOnlyMode?: boolean;  // When true: no *actions* or roleplay emotes — clean text for TTS
   elevenLabsModelId?: string; // ElevenLabs model to use for TTS
+  elStability?: number;      // ElevenLabs voice stability (0-1)
+  elSimilarity?: number;     // ElevenLabs similarity boost (0-1)
+  elStyle?: number;          // ElevenLabs style exaggeration (0-1)
+  elSpeakerBoost?: boolean;  // ElevenLabs speaker boost
+  elSpeakingRate?: number;   // ElevenLabs speaking rate (0.7-1.2)
+  cartesiaSpeed?: number;    // Cartesia speed (0.5-2.0)
+  cartesiaEmotion?: string;  // Cartesia emotion tag
   knowsItsAI: boolean;
   model: string;
   llmProvider?: 'claude' | 'gemini'; // 'gemini' kept for legacy import compatibility
   temperature: number;
   topK: number;
   topP: number;
+  maxTokens?: number;
   timeAwareness: boolean;
   ambientMode: boolean;
   ambientFrequency: 'off' | '1h' | '6h' | '12h' | '24h' | 'low' | 'medium' | 'high';

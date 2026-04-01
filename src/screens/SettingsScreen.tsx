@@ -37,14 +37,10 @@ const SettingsScreen: React.FC = () => {
     updateAIProfile,
     isDebuggerEnabled, setIsDebuggerEnabled,
     firebaseBackup, firebaseRestore,
-    firebaseApiKey:       fbApiKey,       setFirebaseApiKey:       setFbApiKey,
-    firebaseAuthDomain:   fbAuthDomain,   setFirebaseAuthDomain:   setFbAuthDomain,
-    firebaseProjectId:    fbProjectId,    setFirebaseProjectId:    setFbProjectId,
-    firebaseStorageBucket:fbStorageBucket,setFirebaseStorageBucket:setFbStorageBucket,
-    firebaseMessagingSenderId: fbSenderId,setFirebaseMessagingSenderId: setFbSenderId,
-    firebaseAppId:        fbAppId,        setFirebaseAppId:        setFbAppId,
-    firebaseVapidKey:     fbVapidKey,     setFirebaseVapidKey:     setFbVapidKey,
-    firebaseServiceAccountKey: fbServiceKey, setFirebaseServiceAccountKey: setFbServiceKey,
+    firebaseApiKey, firebaseAuthDomain, firebaseProjectId,
+    firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId,
+    firebaseVapidKey, firebaseServiceAccountKey,
+    setFirebaseConfig, setFirebaseServiceAccountKey,
   } = useApp();
 
   const { chatHistory, addChatMessage, setChatHistory, sessions, setSessions, activeSessionId, setActiveSessionId } = useChat();
@@ -66,6 +62,26 @@ const SettingsScreen: React.FC = () => {
   const [isApplyingMongo,       setIsApplyingMongo]       = useState(false);
   const [isFirebaseBackingUp,  setIsFirebaseBackingUp]  = useState(false);
   const [isFirebaseRestoring,  setIsFirebaseRestoring]  = useState(false);
+
+  // Local state for Firebase config fields (never bind inputs directly to context state)
+  const [localFbApiKey,       setLocalFbApiKey]       = useState(firebaseApiKey       || '');
+  const [localFbAuthDomain,   setLocalFbAuthDomain]   = useState(firebaseAuthDomain   || '');
+  const [localFbProjectId,    setLocalFbProjectId]    = useState(firebaseProjectId    || '');
+  const [localFbStorageBucket,setLocalFbStorageBucket]= useState(firebaseStorageBucket|| '');
+  const [localFbSenderId,     setLocalFbSenderId]     = useState(firebaseMessagingSenderId || '');
+  const [localFbAppId,        setLocalFbAppId]        = useState(firebaseAppId        || '');
+  const [localFbVapidKey,     setLocalFbVapidKey]     = useState(firebaseVapidKey     || '');
+  const [localFbServiceKey,   setLocalFbServiceKey]   = useState(firebaseServiceAccountKey || '');
+
+  // Sync local firebase fields when context loads from IndexedDB
+  React.useEffect(() => { setLocalFbApiKey(firebaseApiKey || ''); },              [firebaseApiKey]);
+  React.useEffect(() => { setLocalFbAuthDomain(firebaseAuthDomain || ''); },      [firebaseAuthDomain]);
+  React.useEffect(() => { setLocalFbProjectId(firebaseProjectId || ''); },        [firebaseProjectId]);
+  React.useEffect(() => { setLocalFbStorageBucket(firebaseStorageBucket || ''); },[firebaseStorageBucket]);
+  React.useEffect(() => { setLocalFbSenderId(firebaseMessagingSenderId || ''); }, [firebaseMessagingSenderId]);
+  React.useEffect(() => { setLocalFbAppId(firebaseAppId || ''); },                [firebaseAppId]);
+  React.useEffect(() => { setLocalFbVapidKey(firebaseVapidKey || ''); },          [firebaseVapidKey]);
+  React.useEffect(() => { setLocalFbServiceKey(firebaseServiceAccountKey || ''); },[firebaseServiceAccountKey]);
 
   // Sync local key fields once the context loads saved values from IndexedDB
   React.useEffect(() => { setLocalAnthropicApiKey(anthropicApiKey || ''); }, [anthropicApiKey]);
@@ -186,8 +202,17 @@ const SettingsScreen: React.FC = () => {
   };
 
   const handleSaveFirebaseConfig = () => {
-    // Values are already held in context state via setFb* — just show a toast confirmation
-    addToast({ title: 'Firebase Config Saved', message: 'Firebase configuration updated. It will be used for the next backup/restore.', type: 'success' });
+    setFirebaseConfig({
+      apiKey:            localFbApiKey.trim()        || null,
+      authDomain:        localFbAuthDomain.trim()    || null,
+      projectId:         localFbProjectId.trim()     || null,
+      storageBucket:     localFbStorageBucket.trim() || null,
+      messagingSenderId: localFbSenderId.trim()      || null,
+      appId:             localFbAppId.trim()          || null,
+      vapidKey:          localFbVapidKey.trim()       || null,
+    });
+    setFirebaseServiceAccountKey(localFbServiceKey.trim() || null);
+    addToast({ title: 'Firebase Config Saved', message: 'Firebase configuration saved and ready for backup/restore.', type: 'success' });
   };
   const handleApplyMongoUri = async () => {
     if (!localMongoUri.trim()) return;
@@ -212,14 +237,16 @@ const SettingsScreen: React.FC = () => {
   const handleFirebaseBackup = async () => {
     setIsFirebaseBackingUp(true);
     try {
-      // Collect current app data for backup (chat history + journal + memories + gallery metadata)
-      const currentData = {
-        userId,
-        timestamp: Date.now(),
-        note: 'Backed up from indigo AI app',
-      };
-      await firebaseBackup(currentData);
-      addToast({ title: 'Backup complete', message: `App data backed up to Firebase for user: ${userId}`, type: 'success' });
+      // Fetch the current full cloud sync data for this user, then back it up to Firestore
+      let syncData: any = null;
+      if (userId) {
+        try {
+          const res = await fetch(`/api/sync/${userId}`);
+          if (res.ok) syncData = await res.json();
+        } catch {}
+      }
+      await firebaseBackup({ userId, data: syncData, backedUpAt: Date.now(), appVersion: 2 });
+      addToast({ title: 'Backup complete', message: 'Full app data backed up to Firebase Firestore.', type: 'success' });
     } catch (e: any) {
       addToast({ title: 'Backup failed', message: e.message || 'Could not back up to Firebase.', type: 'error' });
     } finally {
@@ -230,11 +257,25 @@ const SettingsScreen: React.FC = () => {
   const handleFirebaseRestore = async () => {
     setIsFirebaseRestoring(true);
     try {
-      const data = await firebaseRestore();
-      if (!data) {
+      const backup = await firebaseRestore();
+      if (!backup) {
         addToast({ title: 'No backup found', message: `No Firebase backup found for user ID: ${userId}`, type: 'warning' });
+        return;
+      }
+      // Restore the sync data to MongoDB
+      if (backup.data && userId) {
+        const res = await fetch('/api/db/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, data: backup.data }),
+        });
+        if (res.ok) {
+          addToast({ title: 'Restore complete', message: 'Data restored from Firebase backup. Reload the page to see changes.', type: 'success' });
+        } else {
+          addToast({ title: 'Partial restore', message: 'Firebase backup found but cloud sync restore failed. Try the JSON import.', type: 'warning' });
+        }
       } else {
-        addToast({ title: 'Backup found', message: `Firebase backup found (saved ${data.backedUpAt ? new Date(data.backedUpAt?.toDate?.() ?? data.backedUpAt).toLocaleString() : 'N/A'}). Use the standard JSON import to restore data.`, type: 'info' });
+        addToast({ title: 'Backup found', message: `Firebase backup found but no data payload. Saved ${backup.backedUpAt ? new Date(backup.backedUpAt).toLocaleString() : 'N/A'}.`, type: 'info' });
       }
     } catch (e: any) {
       addToast({ title: 'Restore failed', message: e.message || 'Could not reach Firebase.', type: 'error' });
@@ -778,6 +819,46 @@ const SettingsScreen: React.FC = () => {
                 Reconnects immediately and saves to server config. Leave blank to use the default built-in MongoDB.
               </p>
             </div>
+
+            {/* MongoDB Export / Import */}
+            <div className="border-t border-indigo-100 dark:border-indigo-800 pt-3 space-y-2">
+              <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Export / Import MongoDB Data</p>
+              <p className="text-xs text-indigo-500 dark:text-indigo-400">Download all your cloud-synced data as a JSON file, or restore from a previous export.</p>
+              <div className="flex gap-2">
+                <button
+                  data-testid="mongo-export-btn"
+                  onClick={async () => {
+                    if (!userId) { addToast({ title: 'Export failed', message: 'No user ID found. Enable sync first.', type: 'error' }); return; }
+                    const res = await fetch(`/api/db/export/${userId}`);
+                    if (!res.ok) { addToast({ title: 'Export failed', message: await res.text(), type: 'error' }); return; }
+                    const blob = await res.blob();
+                    const url  = URL.createObjectURL(blob);
+                    const a    = document.createElement('a');
+                    a.href     = url; a.download = `indigo-mongodb-backup-${Date.now()}.json`;
+                    a.click(); URL.revokeObjectURL(url);
+                    addToast({ title: 'Export complete', message: 'MongoDB data downloaded.', type: 'success' });
+                  }}
+                  className="app-btn-secondary flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5" /> Export JSON
+                </button>
+                <label className="app-btn-secondary flex items-center gap-1.5 cursor-pointer">
+                  <Upload className="w-3.5 h-3.5" /> Import JSON
+                  <input type="file" accept=".json" className="hidden" onChange={async (e) => {
+                    const file = e.target.files?.[0]; if (!file) return;
+                    if (!userId) { addToast({ title: 'Import failed', message: 'No user ID found.', type: 'error' }); return; }
+                    try {
+                      const text = await file.text();
+                      const parsed = JSON.parse(text);
+                      const data = parsed.data || parsed; // support both wrapped and raw
+                      const res = await fetch('/api/db/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, data }) });
+                      if (!res.ok) { addToast({ title: 'Import failed', message: (await res.json()).error, type: 'error' }); return; }
+                      addToast({ title: 'Import complete', message: 'Data restored from backup. Reload the page to see changes.', type: 'success' });
+                    } catch { addToast({ title: 'Import failed', message: 'Invalid JSON file.', type: 'error' }); }
+                    e.target.value = '';
+                  }} />
+                </label>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -794,19 +875,19 @@ const SettingsScreen: React.FC = () => {
             {/* 2-col grid for short fields */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
-                { label: 'API Key',              key: 'apiKey',            val: fbApiKey,       set: setFbApiKey,       ph: 'AIzaSy...' },
-                { label: 'Auth Domain',          key: 'authDomain',        val: fbAuthDomain,   set: setFbAuthDomain,   ph: 'project.firebaseapp.com' },
-                { label: 'Project ID',           key: 'projectId',         val: fbProjectId,    set: setFbProjectId,    ph: 'my-project-id' },
-                { label: 'Storage Bucket',       key: 'storageBucket',     val: fbStorageBucket,set: setFbStorageBucket,ph: 'project.firebasestorage.app' },
-                { label: 'Messaging Sender ID',  key: 'messagingSenderId', val: fbSenderId,     set: setFbSenderId,     ph: '123456789012' },
-                { label: 'App ID',               key: 'appId',             val: fbAppId,        set: setFbAppId,        ph: '1:123:web:abc123' },
-                { label: 'VAPID Key',            key: 'vapidKey',          val: fbVapidKey,     set: setFbVapidKey,     ph: 'BJ...' },
+                { label: 'API Key',              key: 'apiKey',            val: localFbApiKey,       set: setLocalFbApiKey,       ph: 'AIzaSy...' },
+                { label: 'Auth Domain',          key: 'authDomain',        val: localFbAuthDomain,   set: setLocalFbAuthDomain,   ph: 'project.firebaseapp.com' },
+                { label: 'Project ID',           key: 'projectId',         val: localFbProjectId,    set: setLocalFbProjectId,    ph: 'my-project-id' },
+                { label: 'Storage Bucket',       key: 'storageBucket',     val: localFbStorageBucket,set: setLocalFbStorageBucket,ph: 'project.firebasestorage.app' },
+                { label: 'Messaging Sender ID',  key: 'messagingSenderId', val: localFbSenderId,     set: setLocalFbSenderId,     ph: '123456789012' },
+                { label: 'App ID',               key: 'appId',             val: localFbAppId,        set: setLocalFbAppId,        ph: '1:123:web:abc123' },
+                { label: 'VAPID Key',            key: 'vapidKey',          val: localFbVapidKey,     set: setLocalFbVapidKey,     ph: 'BJ...' },
               ].map(({ label, key, val, set, ph }) => (
                 <div key={key}>
                   <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">{label}</label>
                   <input
-                    type="password"
-                    value={val ?? ''}
+                    type="text"
+                    value={val}
                     onChange={(e) => set(e.target.value)}
                     placeholder={ph}
                     data-testid={`firebase-${key}-input`}
@@ -822,8 +903,8 @@ const SettingsScreen: React.FC = () => {
                 Service Account Key <span className="font-normal text-indigo-400">(optional — for server-side operations)</span>
               </label>
               <textarea
-                value={fbServiceKey ?? ''}
-                onChange={(e) => setFbServiceKey(e.target.value)}
+                value={localFbServiceKey}
+                onChange={(e) => setLocalFbServiceKey(e.target.value)}
                 placeholder={'{\n  "type": "service_account",\n  "project_id": "...",\n  ...\n}'}
                 rows={4}
                 data-testid="firebase-serviceAccountKey-input"
