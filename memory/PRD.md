@@ -23,7 +23,14 @@ Import the GitHub repo (maxdanielj-gif/indigo) as-is and add tweaks:
 - `/app/src/context/AppContext.tsx` — App state + Firebase backup functions
 - `/app/.env` — All environment variables
 
-### 2026-04-02 — Bug Fixes (4 issues)
+### 2026-04-02 — 5 New Features
+- **WaveSpeed UI clarity**: 3 reference image slots now labeled 'Character/Face', 'Pose/Style', 'Scene/BG' with per-slot hints.
+- **Gallery Firebase Storage backup**: New chunked gallery upload via `uploadGalleryToFirebaseStorage` in `firebaseService.ts`. Button in Settings shows progress counter and gallery count.
+- **Freepik img2img structure reference**: Custom image upload slot added to Freepik Pose Reference (any image can be used, not just persona photo). Custom image takes priority over persona photo.
+- **Last backup timestamps**: `lastCloudSyncTime`, `lastFirebaseBackupTime`, `lastGalleryBackupTime` tracked in AppContext (IDB-persisted). Shown as "X ago" below each respective backup button.
+- **Multi-user cloud sync isolation**: Removed secondary aiProfile.id lookup in `/api/sync/:userId`. Strictly returns data for exact userId match only (404 for unknown users).
+
+
 - Fixed MongoDB URI not persisting to IDB: `setMongoUri` in AppContext now directly patches `indigo_app_data_core` via `loadFromDB/saveToDB` instead of relying on stale `saveData` closure. Also added `mongoUri` to `saveData` data object and both dependency arrays.
 - Fixed Stability AI img2img: added `form.append("mode", mode)` to server.ts FormData (was computed but never sent to Stability API).
 - Fixed physical appearance not prepended to Stability AI prompts: moved `enrichedPrompt` computation before the Stability block in `ImageGeneratorScreen.tsx` so all providers get appearance prepended.
