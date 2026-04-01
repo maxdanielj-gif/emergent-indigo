@@ -1501,7 +1501,7 @@ const AIProfileScreen: React.FC = () => {
                                     <button 
                                         onClick={() => {
                                             setVoiceProvider('browser');
-                                            setAIProfile({ ...aiProfile, voiceProvider: 'browser' });
+                                            setAIProfile({ ...aiProfile, voiceProvider: 'browser', aiCanGenerateSpeech: aiCanGenerateSpeech });
                                         }}
                                         className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'browser' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
                                     >
@@ -1511,7 +1511,28 @@ const AIProfileScreen: React.FC = () => {
                                     <button 
                                         onClick={() => {
                                             setVoiceProvider('async');
-                                            setAIProfile({ ...aiProfile, voiceProvider: 'async' });
+                                            setAIProfile({ ...aiProfile, voiceProvider: 'async', aiCanGenerateSpeech: aiCanGenerateSpeech });
+                                            if (asyncVoices.length === 0) fetchAsyncVoices();
+                                        }}
+                                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'async' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
+                                    >
+                                        <Mic className="w-3 h-3 mr-1" />
+                                        Async
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            setVoiceProvider('browser');
+                                            setAIProfile({ ...aiProfile, voiceProvider: 'browser', aiCanGenerateSpeech: aiCanGenerateSpeech });
+                                        }}
+                                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'browser' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
+                                    >
+                                        <Volume2 className="w-3 h-3 mr-1" />
+                                        Browser
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            setVoiceProvider('async');
+                                            setAIProfile({ ...aiProfile, voiceProvider: 'async', aiCanGenerateSpeech: aiCanGenerateSpeech });
                                             if (asyncVoices.length === 0) fetchAsyncVoices();
                                         }}
                                         className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'async' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
@@ -1522,7 +1543,7 @@ const AIProfileScreen: React.FC = () => {
                                     <button 
                                         onClick={() => {
                                             setVoiceProvider('elevenlabs');
-                                            setAIProfile({ ...aiProfile, voiceProvider: 'elevenlabs' });
+                                            setAIProfile({ ...aiProfile, voiceProvider: 'elevenlabs', aiCanGenerateSpeech: aiCanGenerateSpeech });
                                             if (elevenLabsVoices.length === 0) fetchElevenLabsVoices();
                                         }}
                                         className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'elevenlabs' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
@@ -1533,7 +1554,7 @@ const AIProfileScreen: React.FC = () => {
                                     <button 
                                         onClick={() => {
                                             setVoiceProvider('cartesia');
-                                            setAIProfile({ ...aiProfile, voiceProvider: 'cartesia' });
+                                            setAIProfile({ ...aiProfile, voiceProvider: 'cartesia', aiCanGenerateSpeech: aiCanGenerateSpeech });
                                         }}
                                         className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center ${voiceProvider === 'cartesia' ? 'bg-white dark:bg-indigo-800 text-indigo-600 dark:text-indigo-100 shadow-sm' : 'text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
                                     >

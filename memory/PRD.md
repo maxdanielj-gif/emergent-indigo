@@ -55,6 +55,8 @@ Import the GitHub repo (maxdanielj-gif/indigo) as-is and add tweaks:
 - [x] Stability AI image generation
 - [x] MongoDB sync persistence
 - [x] Firebase backup/restore
+- [x] OpenRouter LLM integration (Apr 2026)
+- [x] Cartesia TTS integration (Apr 2026)
 
 ### P1 (Next)
 - [ ] Full Firebase restore (import backed-up data into app state)
@@ -65,3 +67,4 @@ Import the GitHub repo (maxdanielj-gif/indigo) as-is and add tweaks:
 - [ ] Stability AI video generation (Stable Video Diffusion)
 - [ ] MongoDB backup export/import tool
 - [ ] Multi-user cloud sync with userId isolation
+- [ ] UI toast notifications for Settings key saves
