@@ -36,11 +36,15 @@ const SettingsScreen: React.FC = () => {
     syncFrequency, setSyncFrequency,
     updateAIProfile,
     isDebuggerEnabled, setIsDebuggerEnabled,
-    firebaseBackup, firebaseRestore,
+    firebaseBackup, firebaseRestore, firebaseGalleryBackup,
     firebaseApiKey, firebaseAuthDomain, firebaseProjectId,
     firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId,
     firebaseVapidKey, firebaseServiceAccountKey,
     setFirebaseConfig, setFirebaseServiceAccountKey,
+    lastCloudSyncTime, setLastCloudSyncTime,
+    lastFirebaseBackupTime, setLastFirebaseBackupTime,
+    lastGalleryBackupTime, setLastGalleryBackupTime,
+    gallery,
   } = useApp();
 
   const { chatHistory, addChatMessage, setChatHistory, sessions, setSessions, activeSessionId, setActiveSessionId } = useChat();
@@ -62,6 +66,8 @@ const SettingsScreen: React.FC = () => {
   const [isApplyingMongo,       setIsApplyingMongo]       = useState(false);
   const [isFirebaseBackingUp,  setIsFirebaseBackingUp]  = useState(false);
   const [isFirebaseRestoring,  setIsFirebaseRestoring]  = useState(false);
+  const [isGalleryBackingUp,   setIsGalleryBackingUp]   = useState(false);
+  const [galleryBackupProgress, setGalleryBackupProgress] = useState<{done: number; total: number} | null>(null);
 
   // Local state for Firebase config fields (never bind inputs directly to context state)
   const [localFbApiKey,       setLocalFbApiKey]       = useState(firebaseApiKey       || '');
@@ -118,6 +124,7 @@ const SettingsScreen: React.FC = () => {
         body: compressed,
       });
       if (!res.ok) throw new Error('Sync failed');
+      setLastCloudSyncTime(Date.now());
       addToast({ title: 'Sync', message: 'Data synced to cloud!', type: 'success' });
     } catch (e: any) {
       addToast({ title: 'Sync Failed', message: e.message || 'Unknown error', type: 'error' });
@@ -254,6 +261,7 @@ const SettingsScreen: React.FC = () => {
         if (res.ok) syncData = await res.json();
       } catch {}
       await firebaseBackup({ userId, data: syncData, backedUpAt: Date.now(), appVersion: 2 });
+      setLastFirebaseBackupTime(Date.now());
       addToast({ title: 'Backup complete', message: `Data backed up to Firebase Firestore for user: ${userId}`, type: 'success' });
     } catch (e: any) {
       addToast({ title: 'Backup failed', message: e.message || 'Could not back up to Firebase. Check your Firebase config.', type: 'error' });
@@ -293,6 +301,46 @@ const SettingsScreen: React.FC = () => {
   };
 
   // ── Notifications ────────────────────────────────────────────────
+  // Helper: format a timestamp as "X minutes/hours/days ago"
+  const timeAgo = (ts: number | null): string | null => {
+    if (!ts) return null;
+    const diff = Date.now() - ts;
+    if (diff < 60_000) return 'just now';
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+    return `${Math.floor(diff / 86_400_000)}d ago`;
+  };
+
+  const handleGalleryFirebaseBackup = async () => {
+    if (!localFbApiKey || !localFbProjectId || !localFbAppId) {
+      addToast({ title: 'Firebase not configured', message: 'Fill in API Key, Project ID and App ID in Firebase Configuration and save first.', type: 'error' });
+      return;
+    }
+    if (!userId) {
+      addToast({ title: 'User ID required', message: 'Set a User ID in Cloud Sync before backing up.', type: 'error' });
+      return;
+    }
+    if (!localFbStorageBucket) {
+      addToast({ title: 'Storage Bucket required', message: 'Fill in the Firebase Storage Bucket field (e.g. your-project.appspot.com) in Firebase Configuration.', type: 'error' });
+      return;
+    }
+    setIsGalleryBackingUp(true);
+    setGalleryBackupProgress(null);
+    addToast({ title: 'Gallery backup starting…', message: `Uploading ${gallery.length} image(s) to Firebase Storage…`, type: 'info' });
+    try {
+      const count = await firebaseGalleryBackup((done, total) => {
+        setGalleryBackupProgress({ done, total });
+      });
+      setLastGalleryBackupTime(Date.now());
+      addToast({ title: 'Gallery backup complete', message: `${count} image(s) uploaded to Firebase Storage.`, type: 'success' });
+    } catch (e: any) {
+      addToast({ title: 'Gallery backup failed', message: e.message || 'Could not upload gallery to Firebase.', type: 'error' });
+    } finally {
+      setIsGalleryBackingUp(false);
+      setGalleryBackupProgress(null);
+    }
+  };
+
   const handleNotificationToggle = async () => {
     if (typeof Notification === 'undefined') {
       addToast({ title: 'Not Supported', message: 'Notifications not supported in this browser.', type: 'warning' });
@@ -757,14 +805,21 @@ const SettingsScreen: React.FC = () => {
               <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1 italic">Save this ID — you'll need it to recover on another device.</p>
             </div>
 
-            <button
-              onClick={handleSync}
-              disabled={isSyncing}
-              className="app-btn-primary w-full flex items-center justify-center gap-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Syncing…' : 'Sync Now'}
-            </button>
+            <div>
+              <button
+                onClick={handleSync}
+                disabled={isSyncing}
+                className="app-btn-primary w-full flex items-center justify-center gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                {isSyncing ? 'Syncing…' : 'Sync Now'}
+              </button>
+              {lastCloudSyncTime && (
+                <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-1 text-center">
+                  Last synced: {timeAgo(lastCloudSyncTime)}
+                </p>
+              )}
+            </div>
 
             {/* Recovery */}
             <div>
@@ -928,26 +983,64 @@ const SettingsScreen: React.FC = () => {
             </button>
 
             {/* Backup / Restore */}
-            <div className="pt-2 border-t border-indigo-100 dark:border-indigo-800">
-              <p className="text-sm text-indigo-600 dark:text-indigo-400 mb-3">
+            <div className="pt-2 border-t border-indigo-100 dark:border-indigo-800 space-y-3">
+              <p className="text-sm text-indigo-600 dark:text-indigo-400">
                 Back up your app data to Firestore. Your User ID (set in Cloud Sync above) is used as the document key.
               </p>
               {!userId && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-sm text-amber-700 dark:text-amber-300 mb-3">
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-sm text-amber-700 dark:text-amber-300">
                   Set a User ID in Cloud Sync &amp; Recovery above before backing up.
                 </div>
               )}
-              <div className="flex gap-3">
-                <button onClick={handleFirebaseBackup} disabled={isFirebaseBackingUp || !userId}
-                  data-testid="firebase-backup-btn"
-                  className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
-                  {isFirebaseBackingUp ? <><RefreshCw className="w-4 h-4 animate-spin" />Backing up…</> : 'Backup to Firebase'}
+
+              {/* App data backup */}
+              <div>
+                <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1.5">App Data (Firestore)</p>
+                <div className="flex gap-3">
+                  <button onClick={handleFirebaseBackup} disabled={isFirebaseBackingUp || !userId}
+                    data-testid="firebase-backup-btn"
+                    className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
+                    {isFirebaseBackingUp ? <><RefreshCw className="w-4 h-4 animate-spin" />Backing up…</> : 'Backup to Firestore'}
+                  </button>
+                  <button onClick={handleFirebaseRestore} disabled={isFirebaseRestoring || !userId}
+                    data-testid="firebase-restore-btn"
+                    className="flex-1 py-2.5 bg-white dark:bg-indigo-900 border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
+                    {isFirebaseRestoring ? <><RefreshCw className="w-4 h-4 animate-spin" />Checking…</> : 'Check Backup'}
+                  </button>
+                </div>
+                {lastFirebaseBackupTime && (
+                  <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-1 text-center">
+                    Last backed up: {timeAgo(lastFirebaseBackupTime)}
+                  </p>
+                )}
+              </div>
+
+              {/* Gallery backup to Firebase Storage */}
+              <div className="border-t border-indigo-100 dark:border-indigo-800 pt-3">
+                <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Gallery Images (Firebase Storage)</p>
+                <p className="text-xs text-indigo-500 dark:text-indigo-400 mb-2">
+                  Uploads each gallery image individually to Firebase Storage. Requires <strong>Storage Bucket</strong> to be filled in above.
+                  {gallery.length > 0 ? ` You have ${gallery.length} image(s) in your gallery.` : ' Your gallery is currently empty.'}
+                </p>
+                <button
+                  onClick={handleGalleryFirebaseBackup}
+                  disabled={isGalleryBackingUp || !userId || gallery.length === 0}
+                  data-testid="firebase-gallery-backup-btn"
+                  className="w-full py-2.5 bg-indigo-500 text-white rounded-xl font-medium hover:bg-indigo-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
+                  {isGalleryBackingUp ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      {galleryBackupProgress
+                        ? `Uploading ${galleryBackupProgress.done} / ${galleryBackupProgress.total}…`
+                        : 'Preparing…'}
+                    </>
+                  ) : 'Backup Gallery to Firebase Storage'}
                 </button>
-                <button onClick={handleFirebaseRestore} disabled={isFirebaseRestoring || !userId}
-                  data-testid="firebase-restore-btn"
-                  className="flex-1 py-2.5 bg-white dark:bg-indigo-900 border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
-                  {isFirebaseRestoring ? <><RefreshCw className="w-4 h-4 animate-spin" />Checking…</> : 'Check Backup'}
-                </button>
+                {lastGalleryBackupTime && (
+                  <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-1 text-center">
+                    Last gallery backup: {timeAgo(lastGalleryBackupTime)}
+                  </p>
+                )}
               </div>
             </div>
           </div>

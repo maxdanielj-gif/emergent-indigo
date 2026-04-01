@@ -3,7 +3,7 @@ import { gzipSync, strToU8, gunzipSync, strFromU8 } from 'fflate';
 import { saveToDB, loadFromDB, deleteFromDB, clearDB } from '../services/db';
 import { onForegroundMessage, requestNotificationPermission } from '../services/webPushService';
 import { showNativeNotification } from '../services/notificationService';
-import { backupToFirestore, restoreFromFirestore } from '../services/firebaseService';
+import { backupToFirestore, restoreFromFirestore, uploadGalleryToFirebaseStorage } from '../services/firebaseService';
 import { AIProfile, UserProfile, ChatMessage, GalleryItem, JournalEntry, Memory, KnowledgeBaseDocument, ChatSession, Background, ProactiveCommunication } from '../types';
 
 export interface Toast {
@@ -119,6 +119,12 @@ interface AppContextType extends AppState {
   setEmergentLlmKey: (key: string | null) => void;
   mongoUri: string | null;
   setMongoUri: (uri: string | null) => void;
+  lastCloudSyncTime: number | null;
+  lastFirebaseBackupTime: number | null;
+  lastGalleryBackupTime: number | null;
+  setLastCloudSyncTime: (t: number | null) => void;
+  setLastFirebaseBackupTime: (t: number | null) => void;
+  setLastGalleryBackupTime: (t: number | null) => void;
   setAnthropicApiKey: (key: string | null) => void;
   setKaggleApiKey: (key: string | null) => void;
   setOpenaiApiKey: (key: string | null) => void;
@@ -148,6 +154,7 @@ interface AppContextType extends AppState {
   fetchWithRetry: (url: string, options: RequestInit, retries?: number, backoff?: number) => Promise<Response>;
   firebaseBackup: (data: any) => Promise<void>;
   firebaseRestore: () => Promise<any | null>;
+  firebaseGalleryBackup: (onProgress?: (done: number, total: number) => void) => Promise<number>;
   asyncApiKey: string | null;
   setAsyncApiKey: (key: string | null) => void;
   firebaseApiKey: string | null;
@@ -293,6 +300,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cartesiaApiKey,   setCartesiaApiKeyState]   = useState<string | null>(null);
   const [emergentLlmKey,   setEmergentLlmKeyState]   = useState<string | null>(null);
   const [mongoUri,         setMongoUriState]          = useState<string | null>(null);
+  const [lastCloudSyncTime,      setLastCloudSyncTimeState]      = useState<number | null>(null);
+  const [lastFirebaseBackupTime, setLastFirebaseBackupTimeState] = useState<number | null>(null);
+  const [lastGalleryBackupTime,  setLastGalleryBackupTimeState]  = useState<number | null>(null);
   const [anthropicApiKey, setAnthropicApiKeyState] = useState<string | null>(null);
   const [elevenLabsApiKey, setElevenLabsApiKeyState] = useState<string | null>(null);
   const [geminiApiKey, setGeminiApiKeyState] = useState<string | null>(null);
@@ -599,6 +609,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setCartesiaApiKeyState(savedData.cartesiaApiKey || null);
                 setEmergentLlmKeyState(savedData.emergentLlmKey || null);
                 setMongoUriState(savedData.mongoUri || null);
+                setLastCloudSyncTimeState(savedData.lastCloudSyncTime || null);
+                setLastFirebaseBackupTimeState(savedData.lastFirebaseBackupTime || null);
+                setLastGalleryBackupTimeState(savedData.lastGalleryBackupTime || null);
                 setFirebaseApiKey(savedData.firebaseApiKey || null);
                 setFirebaseAuthDomain(savedData.firebaseAuthDomain || null);
                 setFirebaseProjectId(savedData.firebaseProjectId || null);
@@ -727,6 +740,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           openaiApiKey,
           stabilityApiKey,
           mongoUri,
+          lastCloudSyncTime,
+          lastFirebaseBackupTime,
+          lastGalleryBackupTime,
           lastInteractionTime,
           userId,
           isSuccessfullyLoaded,
@@ -1136,6 +1152,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }).catch(() => {});
   };
 
+  const setLastCloudSyncTime = (t: number | null) => {
+    setLastCloudSyncTimeState(t);
+    loadFromDB('indigo_app_data_core').then((core: any) => {
+      if (core) saveToDB('indigo_app_data_core', { ...core, lastCloudSyncTime: t });
+    }).catch(() => {});
+  };
+
+  const setLastFirebaseBackupTime = (t: number | null) => {
+    setLastFirebaseBackupTimeState(t);
+    loadFromDB('indigo_app_data_core').then((core: any) => {
+      if (core) saveToDB('indigo_app_data_core', { ...core, lastFirebaseBackupTime: t });
+    }).catch(() => {});
+  };
+
+  const setLastGalleryBackupTime = (t: number | null) => {
+    setLastGalleryBackupTimeState(t);
+    loadFromDB('indigo_app_data_core').then((core: any) => {
+      if (core) saveToDB('indigo_app_data_core', { ...core, lastGalleryBackupTime: t });
+    }).catch(() => {});
+  };
+
   const setAnthropicApiKey = (key: string | null) => {
     setAnthropicApiKeyState(key);
   };
@@ -1167,6 +1204,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const firebaseRestore = async (): Promise<any | null> => {
     if (!userId) throw new Error("Set a User ID in Cloud Sync settings before restoring.");
     return restoreFromFirestore(userId, firebaseRuntimeConfig);
+  };
+
+  const firebaseGalleryBackup = async (onProgress?: (done: number, total: number) => void): Promise<number> => {
+    if (!userId) throw new Error("Set a User ID in Cloud Sync settings before backing up the gallery.");
+    return uploadGalleryToFirebaseStorage(userId, gallery, firebaseRuntimeConfig, onProgress);
   };
 
   const clearAllToasts = () => {
@@ -1718,6 +1760,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cartesiaApiKey, setCartesiaApiKey,
       emergentLlmKey, setEmergentLlmKey,
       mongoUri, setMongoUri,
+      lastCloudSyncTime, lastFirebaseBackupTime, lastGalleryBackupTime,
+      setLastCloudSyncTime, setLastFirebaseBackupTime, setLastGalleryBackupTime,
       anthropicApiKey, setAnthropicApiKey,
       elevenLabsApiKey, setElevenLabsApiKey: setElevenLabsApiKeyState,
       geminiApiKey, setGeminiApiKey: setGeminiApiKeyState,
@@ -1730,7 +1774,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       userId, setUserId, isSyncing, setIsSyncing,
       exportGalleryData, exportGalleryChunks, importGalleryData, importGalleryChunks, syncGalleryToCloud, restoreGalleryFromCloud, restoreGalleryFromDrive,
       updateAIProfile, fetchWithRetry, clearAllToasts,
-      firebaseBackup, firebaseRestore,
+      firebaseBackup, firebaseRestore, firebaseGalleryBackup,
     }}>
       {!isLoaded ? (
         <div className="flex h-screen flex-col items-center justify-center bg-indigo-50 dark:bg-indigo-950 p-4 text-center">

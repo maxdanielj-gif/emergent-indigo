@@ -2,6 +2,7 @@ import { initializeApp, getApps, deleteApp, FirebaseApp } from 'firebase/app';
 import {
   getFirestore, doc, setDoc, getDoc, Firestore, serverTimestamp,
 } from 'firebase/firestore';
+import { getStorage, ref as storageRef, uploadString, getDownloadURL, FirebaseStorage } from 'firebase/storage';
 
 export interface FirebaseRuntimeConfig {
   apiKey?:            string | null;
@@ -28,13 +29,13 @@ function isConfigured(config: ReturnType<typeof buildConfig>): boolean {
   return !!(config.apiKey && config.projectId && config.appId);
 }
 
-// ── Get a Firestore instance using the provided config ────────────────────────
-// Re-initializes Firebase if the config has changed (e.g. user updated keys in Settings)
-let currentApp:  FirebaseApp | null = null;
-let currentDb:   Firestore   | null = null;
+// ── Global Firebase instances ─────────────────────────────────────────────────
+let currentApp:  FirebaseApp      | null = null;
+let currentDb:   Firestore        | null = null;
+let currentStorage: FirebaseStorage | null = null;
 let lastConfigKey = '';
 
-function getDb(runtime?: FirebaseRuntimeConfig): Firestore {
+function getApp(runtime?: FirebaseRuntimeConfig): FirebaseApp {
   const config    = buildConfig(runtime);
   const configKey = JSON.stringify(config);
 
@@ -44,16 +45,20 @@ function getDb(runtime?: FirebaseRuntimeConfig): Firestore {
     );
   }
 
-  // Re-initialize only when config actually changed
   if (configKey !== lastConfigKey) {
-    if (currentApp) {
-      try { deleteApp(currentApp); } catch {}
-    }
+    if (currentApp) { try { deleteApp(currentApp); } catch {} }
     currentApp     = initializeApp(config, `indigo-${Date.now()}`);
     currentDb      = getFirestore(currentApp);
+    currentStorage = null; // reset on config change
     lastConfigKey  = configKey;
   }
 
+  return currentApp!;
+}
+
+function getDb(runtime?: FirebaseRuntimeConfig): Firestore {
+  const app = getApp(runtime);
+  if (!currentDb) currentDb = getFirestore(app);
   return currentDb!;
 }
 
@@ -88,4 +93,51 @@ export async function restoreFromFirestore(
   const snap = await getDoc(doc(db, 'indigo_backups', userId.trim()));
   if (!snap.exists()) return null;
   return snap.data();
+}
+
+// ── Upload gallery images to Firebase Storage ─────────────────────────────────
+export async function uploadGalleryToFirebaseStorage(
+  userId: string,
+  gallery: Array<{ id?: string; url: string; prompt?: string; provider?: string; createdAt?: number }>,
+  runtime?: FirebaseRuntimeConfig,
+  onProgress?: (done: number, total: number) => void,
+): Promise<number> {
+  if (!userId?.trim()) throw new Error("A User ID is required. Set one in Settings → Cloud Sync.");
+
+  const app = getApp(runtime);
+  if (!currentStorage) currentStorage = getStorage(app);
+  const storage = currentStorage;
+  const db = getDb(runtime);
+
+  const validItems = gallery.filter(item => item.url && item.url.startsWith('data:'));
+  if (validItems.length === 0) throw new Error("No local gallery images found to upload.");
+
+  let uploaded = 0;
+  const manifest: Array<{ id: string; path: string; prompt?: string; provider?: string }> = [];
+
+  for (let i = 0; i < validItems.length; i++) {
+    const item = validItems[i];
+    const mimeMatch = item.url.match(/data:image\/([^;]+);/);
+    const ext = mimeMatch ? mimeMatch[1].replace('+xml', '') : 'png';
+    const base64 = item.url.includes(',') ? item.url.split(',')[1] : item.url;
+    const itemId = item.id || `item_${i}_${Date.now()}`;
+    const path = `${userId.trim()}/gallery/${itemId}.${ext}`;
+
+    const fileRef = storageRef(storage, path);
+    await uploadString(fileRef, base64, 'base64', { contentType: `image/${ext}` });
+    manifest.push({ id: itemId, path, prompt: item.prompt, provider: item.provider });
+    uploaded++;
+
+    if (onProgress) onProgress(uploaded, validItems.length);
+  }
+
+  // Store manifest in Firestore
+  await setDoc(doc(db, 'indigo_gallery_manifests', userId.trim()), {
+    uploadedAt:  serverTimestamp(),
+    count:       uploaded,
+    items:       manifest,
+    version:     1,
+  });
+
+  return uploaded;
 }

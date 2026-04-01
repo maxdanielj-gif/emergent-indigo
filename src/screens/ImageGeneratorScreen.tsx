@@ -182,6 +182,9 @@ const ImageGeneratorScreen: React.FC = () => {
   const [wsSeed,            setWsSeed]            = useState('');
   const [wsSize,            setWsSize]            = useState('');
 
+  // ── Freepik custom structure reference (img2img) ──────────────────────────
+  const [customStructureRef, setCustomStructureRef] = useState<string | null>(null);
+
   // ── LoRA state (shared) ───────────────────────────────────────────────────
   const [loras,             setLoras]             = useState<any>({ default: [], customs: [] });
   const [lorasLoaded,       setLorasLoaded]       = useState(false);
@@ -448,9 +451,10 @@ const ImageGeneratorScreen: React.FC = () => {
     setJobStatus('creating'); setStatusMsg('Creating task…'); setResultImages([]);
 
     const hasStructureRef = useReference && hasRef;
+    const hasAnyStructureRef = !!customStructureRef || hasStructureRef;
     // Per Freepik docs: LoRAs are ignored when structure_reference OR style_reference
     // is present — either one alone is enough to disable them
-    const usingRefs = hasStructureRef || !!styleRefImage;
+    const usingRefs = hasAnyStructureRef || !!styleRefImage;
     // Also check model LoRA compatibility
     const selectedModel = MODELS.find(m => m.value === model);
     const modelSupportsLoras = selectedModel?.loraOk ?? true;
@@ -523,7 +527,11 @@ const ImageGeneratorScreen: React.FC = () => {
           fixed_generation: fixedGeneration,
           apiKey: freepikApiKey,
           ...(negPrompt.trim() ? { negativePrompt: negPrompt.trim() } : {}),
-          ...(hasStructureRef ? { structureReference: aiProfile.referenceImage, structureStrength } : {}),
+          // Custom upload takes priority; fall back to persona photo if toggled on
+          ...((customStructureRef || hasStructureRef) ? {
+            structureReference: customStructureRef || aiProfile.referenceImage,
+            structureStrength,
+          } : {}),
           ...(styleRefImage   ? { styleReference: styleRefImage, adherence, hdr } : {}),
           // Only send LoRAs when not blocked — max 1 character and 1 style
           ...(!lorasBlocked && selectedLoraChars.length  > 0 ? { loraCharacters: [selectedLoraChars[0]]  } : {}),
@@ -609,7 +617,7 @@ const ImageGeneratorScreen: React.FC = () => {
   const characterLoras = allLoras.filter((l: any) => l.type === 'character');
   const styleLoras     = allLoras.filter((l: any) => l.type === 'style');
   // Render-time LoRA block check (mirrors the logic in handleGenerate)
-  const renderUsingRefs = (useReference && hasRef) || !!styleRefImage;
+  const renderUsingRefs = (useReference && hasRef) || !!customStructureRef || !!styleRefImage;
   const renderSelectedModel = MODELS.find(m => m.value === model);
   const renderLorasBlocked = renderUsingRefs || !(renderSelectedModel?.loraOk ?? true);
   const aspectRatios = ASPECT_RATIOS_MYSTIC;
@@ -691,11 +699,25 @@ const ImageGeneratorScreen: React.FC = () => {
           <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
             <p className="text-sm font-semibold text-indigo-800 dark:text-indigo-200">Reference Images</p>
             <div className="grid grid-cols-2 gap-3">
-              {/* Slot 1 — Pose Reference (structure_reference) */}
+              {/* Slot 1 — Structure Reference (pose / composition) */}
               <div className="space-y-2">
-                <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Pose Reference</p>
-                <p className="text-[10px] text-indigo-400 dark:text-indigo-500">Copies body pose and composition. Does not copy face or identity.</p>
-                {hasRef && useReference ? (
+                <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Structure Reference (img2img)</p>
+                <p className="text-[10px] text-indigo-400 dark:text-indigo-500">Copies body pose and composition. Upload any image OR use the AI persona photo.</p>
+
+                {/* Custom upload takes priority */}
+                {customStructureRef ? (
+                  <div className="relative">
+                    <img src={customStructureRef} alt="Custom structure ref"
+                      className="w-full aspect-square object-cover rounded-xl border-2 border-indigo-400 dark:border-indigo-500" />
+                    <div className="absolute bottom-1 left-1 right-1 bg-indigo-600/80 rounded-lg px-1.5 py-0.5 text-[9px] text-white text-center truncate">
+                      Custom image
+                    </div>
+                    <button onClick={() => setCustomStructureRef(null)}
+                      className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : hasRef && useReference ? (
                   <div className="relative">
                     <img src={aiProfile.referenceImage!} alt="Pose ref"
                       className="w-full aspect-square object-cover rounded-xl border-2 border-indigo-400 dark:border-indigo-500" />
@@ -708,13 +730,26 @@ const ImageGeneratorScreen: React.FC = () => {
                     </button>
                   </div>
                 ) : (
-                  <button onClick={() => hasRef ? setUseReference(true) : undefined}
-                    className={`w-full aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-colors ${hasRef ? 'border-indigo-400 dark:border-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-800 cursor-pointer text-indigo-500' : 'border-indigo-200 dark:border-indigo-700 text-indigo-300 dark:text-indigo-600 cursor-default'}`}>
-                    <User className="w-5 h-5" />
-                    <span className="text-[10px] text-center px-1">
-                      {hasRef ? `Use ${aiProfile.name}'s photo` : 'Add reference photo in AI Profile'}
-                    </span>
-                  </button>
+                  <div className="space-y-1.5">
+                    {/* Upload custom image */}
+                    <label className="w-full aspect-square rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-600 flex flex-col items-center justify-center gap-1 hover:bg-indigo-100 dark:hover:bg-indigo-800 transition-colors cursor-pointer text-indigo-400 dark:text-indigo-500">
+                      <Upload className="w-5 h-5" />
+                      <span className="text-[10px] text-center px-1">Upload custom image</span>
+                      <input type="file" accept="image/*" className="hidden"
+                        onChange={e => {
+                          const f = e.target.files?.[0]; if (!f) return;
+                          const reader = new FileReader();
+                          reader.onload = () => setCustomStructureRef(reader.result as string);
+                          reader.readAsDataURL(f); e.target.value = '';
+                        }} />
+                    </label>
+                    {hasRef && (
+                      <button onClick={() => setUseReference(true)}
+                        className="w-full py-1 text-[10px] text-indigo-600 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-600 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-800 transition-colors flex items-center justify-center gap-1">
+                        <User className="w-3 h-3" /> Use {aiProfile.name}'s photo instead
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               {/* Slot 2 — Style Reference */}
@@ -745,17 +780,17 @@ const ImageGeneratorScreen: React.FC = () => {
                 )}
               </div>
             </div>
-            {useReference && hasRef && (
+            {(useReference && hasRef || !!customStructureRef) && (
               <div className="pt-1 space-y-2">
-                <Slider label="Pose Strength" value={structureStrength} min={0} max={100} onChange={setStructureStrength} />
-                <p className="text-[10px] text-indigo-400 -mt-1"><strong>Lower</strong> = looser interpretation of the pose. <strong>Higher</strong> = more tightly copies the exact pose, framing, and composition.</p>
-                <p className="text-[10px] text-amber-500 dark:text-amber-400">⚠ Freepik will force the same aspect ratio as the reference photo, ignoring the Ratio setting below. Use a reference photo with the same shape as your desired output.</p>
+                <Slider label="Structure Strength" value={structureStrength} min={0} max={100} onChange={setStructureStrength} />
+                <p className="text-[10px] text-indigo-400 -mt-1"><strong>Lower</strong> = looser interpretation of the composition. <strong>Higher</strong> = more tightly copies the exact pose, framing, and composition.</p>
+                <p className="text-[10px] text-amber-500 dark:text-amber-400">⚠ Freepik will force the same aspect ratio as the reference photo, ignoring the Ratio setting below.</p>
               </div>
             )}
-            {useReference && hasRef && aiProfile.appearance && (
+            {aiProfile.appearance && (
               <p className="text-[10px] text-indigo-500 dark:text-indigo-400">
                 <span className="font-medium">Appearance description included in prompt. </span>
-                Style reference ignores this — use Pose Reference or LoRA instead for character appearance.
+                Style reference ignores this — use Structure Reference or LoRA instead for character appearance.
               </p>
             )}
             {renderLorasBlocked && (selectedLoraChars.length + selectedLoraStyles.length > 0) && (
@@ -771,13 +806,16 @@ const ImageGeneratorScreen: React.FC = () => {
             <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
             <div>
               <p className="text-sm font-semibold text-indigo-800 dark:text-indigo-200">Reference Images</p>
-              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-0.5">Up to 3 images — the model uses them to guide editing, style, and character appearance.</p>
+              <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-0.5">Upload up to 3 images to guide the edit. Each slot has a suggested role, but you can use any image in any slot.</p>
             </div>
             <div className="grid grid-cols-3 gap-3">
               {([0,1,2] as const).map(i => {
-                const label = `Image ${i+1}`;
-                const val = wsImages[i];
-                const setVal = (v: string | null) => setWsImages(prev => { const n=[...prev]; n[i]=v; return n; });
+                const WS_SLOT_LABELS  = ['Character / Face', 'Pose / Style', 'Scene / BG'] as const;
+                const WS_SLOT_HINTS   = ['Best for face & identity', 'Body pose & style guide', 'Background & scene'] as const;
+                const label    = WS_SLOT_LABELS[i];
+                const hint     = WS_SLOT_HINTS[i];
+                const val      = wsImages[i];
+                const setVal   = (v: string | null) => setWsImages(prev => { const n=[...prev]; n[i]=v; return n; });
 
                 // Slot 0 auto-fills with persona photo UNLESS user has cleared it
                 const isAutoFilled = i === 0 && !val && hasRef && !wsSlot0Cleared;
@@ -788,6 +826,7 @@ const ImageGeneratorScreen: React.FC = () => {
                     <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
                       {label}{isAutoFilled ? <span className="text-[9px] text-indigo-400 ml-1">(auto)</span> : ''}
                     </p>
+                    <p className="text-[9px] text-indigo-400 dark:text-indigo-500">{hint}</p>
                     {displayImg ? (
                       <div className="relative">
                         <img src={displayImg} alt={label}
@@ -812,7 +851,7 @@ const ImageGeneratorScreen: React.FC = () => {
                     ) : (
                       <label className="w-full aspect-square rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-600 flex flex-col items-center justify-center gap-1 hover:bg-indigo-100 dark:hover:bg-indigo-800 transition-colors cursor-pointer text-indigo-400 dark:text-indigo-500">
                         <Upload className="w-5 h-5" />
-                        <span className="text-[10px]">{i === 0 && wsSlot0Cleared && hasRef ? `Re-add ${aiProfile.name}'s photo` : 'Upload'}</span>
+                        <span className="text-[10px] text-center px-1">{i === 0 && wsSlot0Cleared && hasRef ? `Re-add ${aiProfile.name}'s photo` : 'Upload'}</span>
                         <input type="file" accept="image/*" className="hidden"
                           onChange={e => {
                             const f = e.target.files?.[0]; if (!f) return;

@@ -852,22 +852,10 @@ app.get("/api/debug-sync", (_req, res) => {
 });
 
 app.get("/api/sync/:userId?", (req, res) => {
-  let userId = req.params.userId?.trim();
+  const userId = req.params.userId?.trim();
   if (!userId) return res.status(400).json({ error: "User ID is required" });
-  let data = cloudSyncData[userId];
-  if (!data) {
-    for (const key in cloudSyncData) {
-      const u = cloudSyncData[key];
-      if (
-        u.aiProfile?.id === userId ||
-        u.savedPersonas?.find((p: any) => p.id === userId)
-      ) {
-        data = u;
-        break;
-      }
-    }
-  }
-  if (!data) return res.status(404).json({ error: "No sync data found" });
+  const data = cloudSyncData[userId];
+  if (!data) return res.status(404).json({ error: "No sync data found for this user ID" });
   res.json(data);
 });
 
