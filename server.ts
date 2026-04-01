@@ -1192,7 +1192,35 @@ app.get("/api/wavespeed/status/:taskId", async (req, res) => {
 });
 
 
-// ── Stability AI: text-to-image ───────────────────────────────────────────────
+// ── Runtime config: update MongoDB URI ───────────────────────────────────────
+app.post("/api/config/set-mongo", express.json(), async (req, res) => {
+  const { mongoUrl } = req.body;
+  if (!mongoUrl?.trim()) return res.status(400).json({ error: "mongoUrl is required." });
+
+  try {
+    // Reconnect to the new MongoDB URI
+    process.env.MONGO_URL = mongoUrl.trim();
+    await connectMongo();
+
+    // Persist to .env so it survives restarts
+    const envPath = path.join(__dirname, ".env");
+    let envContent = "";
+    try { envContent = fs.readFileSync(envPath, "utf-8"); } catch {}
+    if (envContent.includes("MONGO_URL=")) {
+      envContent = envContent.replace(/^MONGO_URL=.*/m, `MONGO_URL=${mongoUrl.trim()}`);
+    } else {
+      envContent += `\nMONGO_URL=${mongoUrl.trim()}`;
+    }
+    fs.writeFileSync(envPath, envContent);
+
+    console.log(`MongoDB URI updated to: ${mongoUrl.trim().replace(/:([^@]+)@/, ":***@")}`);
+    res.json({ success: true, message: "MongoDB reconnected and .env updated." });
+  } catch (e: any) {
+    console.error("Failed to update MongoDB URI:", e);
+    res.status(500).json({ error: e.message || "Failed to reconnect to MongoDB." });
+  }
+});
+
 const STABILITY_MODELS: Record<string, string> = {
   "stable-image-core":              "core",
   "stable-diffusion-3.5-large":     "sd3",

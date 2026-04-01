@@ -113,6 +113,12 @@ interface AppContextType extends AppState {
   importData: (json: string, setChatHistory: (history: ChatMessage[]) => void, setSessions: (sessions: ChatSession[]) => void, setActiveSessionId: (id: string | null) => void) => void;
   setApiKey: (key: string | null) => void;
   setOpenRouterApiKey: (key: string | null) => void;
+  cartesiaApiKey: string | null;
+  setCartesiaApiKey: (key: string | null) => void;
+  emergentLlmKey: string | null;
+  setEmergentLlmKey: (key: string | null) => void;
+  mongoUri: string | null;
+  setMongoUri: (uri: string | null) => void;
   setAnthropicApiKey: (key: string | null) => void;
   setKaggleApiKey: (key: string | null) => void;
   setOpenaiApiKey: (key: string | null) => void;
@@ -278,6 +284,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [apiKey, setApiKeyState] = useState<string | null>(null);
   const [openRouterApiKey, setOpenRouterApiKeyState] = useState<string | null>(null);
+  const [cartesiaApiKey,   setCartesiaApiKeyState]   = useState<string | null>(null);
+  const [emergentLlmKey,   setEmergentLlmKeyState]   = useState<string | null>(null);
+  const [mongoUri,         setMongoUriState]          = useState<string | null>(null);
   const [anthropicApiKey, setAnthropicApiKeyState] = useState<string | null>(null);
   const [elevenLabsApiKey, setElevenLabsApiKeyState] = useState<string | null>(null);
   const [geminiApiKey, setGeminiApiKeyState] = useState<string | null>(null);
@@ -578,6 +587,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setFreepikApiKeyState(savedData.freepikApiKey || null);
                 setWavespeedApiKeyState(savedData.wavespeedApiKey || null);
                 setStabilityApiKeyState(savedData.stabilityApiKey || null);
+                setOpenRouterApiKeyState(savedData.openRouterApiKey || null);
+                setCartesiaApiKeyState(savedData.cartesiaApiKey || null);
+                setEmergentLlmKeyState(savedData.emergentLlmKey || null);
+                setMongoUriState(savedData.mongoUri || null);
                 setFirebaseApiKey(savedData.firebaseApiKey || null);
                 setFirebaseProjectId(savedData.firebaseProjectId || null);
                 setFirebaseAppId(savedData.firebaseAppId || null);
@@ -1090,6 +1103,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const setOpenRouterApiKey = (key: string | null) => {
     setOpenRouterApiKeyState(key);
+    saveData({ openRouterApiKey: key });
+  };
+  const setCartesiaApiKey = (key: string | null) => {
+    setCartesiaApiKeyState(key);
+    saveData({ cartesiaApiKey: key });
+  };
+  const setEmergentLlmKey = (key: string | null) => {
+    setEmergentLlmKeyState(key);
+    saveData({ emergentLlmKey: key });
+  };
+  const setMongoUri = (uri: string | null) => {
+    setMongoUriState(uri);
+    saveData({ mongoUri: uri });
   };
 
   const setAnthropicApiKey = (key: string | null) => {
@@ -1652,6 +1678,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       firebaseServiceAccountKey, setFirebaseServiceAccountKey,
       googleClientId, googleClientSecret, setGoogleConfig,
       openRouterApiKey, setOpenRouterApiKey,
+      cartesiaApiKey, setCartesiaApiKey,
+      emergentLlmKey, setEmergentLlmKey,
+      mongoUri, setMongoUri,
       anthropicApiKey, setAnthropicApiKey,
       elevenLabsApiKey, setElevenLabsApiKey: setElevenLabsApiKeyState,
       geminiApiKey, setGeminiApiKey: setGeminiApiKeyState,

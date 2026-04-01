@@ -23,7 +23,12 @@ Import the GitHub repo (maxdanielj-gif/indigo) as-is and add tweaks:
 - `/app/src/context/AppContext.tsx` — App state + Firebase backup functions
 - `/app/.env` — All environment variables
 
-## What's Been Implemented
+### 2026-04-01 — Settings key fields + MongoDB override
+- Added OpenRouter, Cartesia, Emergent LLM key fields in Settings → API Keys section
+- Added MongoDB Configuration section with live URI update (reconnects immediately, persists to .env)
+- Added `cartesiaApiKey`, `emergentLlmKey`, `mongoUri` state + setters to AppContext
+- Fixed `openRouterApiKey` to actually load from saved data (was missing from load block)
+- `/api/config/set-mongo` endpoint for runtime MongoDB URI changes without restart
 
 ### 2026-03-31 — Initial Setup + Integrations
 - Set up the project in the Emergent environment (frontend/backend supervisor wrappers)

@@ -17,6 +17,10 @@ const SettingsScreen: React.FC = () => {
     freepikApiKey, setFreepikApiKey,
     wavespeedApiKey, setWavespeedApiKey,
     stabilityApiKey, setStabilityApiKey,
+    openRouterApiKey, setOpenRouterApiKey,
+    cartesiaApiKey, setCartesiaApiKey,
+    emergentLlmKey, setEmergentLlmKey,
+    mongoUri, setMongoUri,
     setShowTutorial,
     autoSaveChat, setAutoSaveChat, autoSaveChatInterval, setAutoSaveChatInterval,
     autoJsonBackup, setAutoJsonBackup, autoJsonBackupInterval, setAutoJsonBackupInterval,
@@ -44,9 +48,14 @@ const SettingsScreen: React.FC = () => {
   const [localAnthropicApiKey,    setLocalAnthropicApiKey]    = useState(anthropicApiKey || '');
   const [localElevenLabsApiKey,   setLocalElevenLabsApiKey]   = useState(elevenLabsApiKey || '');
   const [localGeminiApiKey,       setLocalGeminiApiKey]       = useState(geminiApiKey || '');
-  const [localFreepikApiKey,  setLocalFreepikApiKey]  = useState(freepikApiKey || '');
-  const [localWavespeedApiKey, setLocalWavespeedApiKey] = useState(wavespeedApiKey || '');
-  const [localStabilityApiKey, setLocalStabilityApiKey] = useState(stabilityApiKey || '');
+  const [localFreepikApiKey,    setLocalFreepikApiKey]    = useState(freepikApiKey    || '');
+  const [localWavespeedApiKey,  setLocalWavespeedApiKey]  = useState(wavespeedApiKey  || '');
+  const [localStabilityApiKey,  setLocalStabilityApiKey]  = useState(stabilityApiKey  || '');
+  const [localOpenRouterApiKey, setLocalOpenRouterApiKey] = useState(openRouterApiKey || '');
+  const [localCartesiaApiKey,   setLocalCartesiaApiKey]   = useState(cartesiaApiKey   || '');
+  const [localEmergentLlmKey,   setLocalEmergentLlmKey]   = useState(emergentLlmKey   || '');
+  const [localMongoUri,         setLocalMongoUri]         = useState(mongoUri         || '');
+  const [isApplyingMongo,       setIsApplyingMongo]       = useState(false);
   const [isFirebaseBackingUp,  setIsFirebaseBackingUp]  = useState(false);
   const [isFirebaseRestoring,  setIsFirebaseRestoring]  = useState(false);
 
@@ -58,6 +67,10 @@ const SettingsScreen: React.FC = () => {
   React.useEffect(() => { setLocalFreepikApiKey(freepikApiKey || ''); }, [freepikApiKey]);
   React.useEffect(() => { setLocalWavespeedApiKey(wavespeedApiKey || ''); }, [wavespeedApiKey]);
   React.useEffect(() => { setLocalStabilityApiKey(stabilityApiKey || ''); }, [stabilityApiKey]);
+  React.useEffect(() => { setLocalOpenRouterApiKey(openRouterApiKey || ''); }, [openRouterApiKey]);
+  React.useEffect(() => { setLocalCartesiaApiKey(cartesiaApiKey || ''); }, [cartesiaApiKey]);
+  React.useEffect(() => { setLocalEmergentLlmKey(emergentLlmKey || ''); }, [emergentLlmKey]);
+  React.useEffect(() => { setLocalMongoUri(mongoUri || ''); }, [mongoUri]);
   const [localSyncId,          setLocalSyncId]          = useState(userId || '');
   const [recoveryId,           setRecoveryId]           = useState('');
   const [isExporting,          setIsExporting]          = useState(false);
@@ -150,6 +163,37 @@ const SettingsScreen: React.FC = () => {
   const handleSaveStabilityKey = () => {
     setStabilityApiKey(localStabilityApiKey.trim() || null);
     addToast({ title: 'Saved', message: 'Stability AI key saved.', type: 'success' });
+  };
+  const handleSaveOpenRouterKey = () => {
+    setOpenRouterApiKey(localOpenRouterApiKey.trim() || null);
+    addToast({ title: 'Saved', message: 'OpenRouter key saved.', type: 'success' });
+  };
+  const handleSaveCartesiaKey = () => {
+    setCartesiaApiKey(localCartesiaApiKey.trim() || null);
+    addToast({ title: 'Saved', message: 'Cartesia key saved.', type: 'success' });
+  };
+  const handleSaveEmergentLlmKey = () => {
+    setEmergentLlmKey(localEmergentLlmKey.trim() || null);
+    addToast({ title: 'Saved', message: 'Emergent LLM key saved.', type: 'success' });
+  };
+  const handleApplyMongoUri = async () => {
+    if (!localMongoUri.trim()) return;
+    setIsApplyingMongo(true);
+    try {
+      const res = await fetch('/api/config/set-mongo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mongoUrl: localMongoUri.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      setMongoUri(localMongoUri.trim());
+      addToast({ title: 'MongoDB updated', message: data.message, type: 'success' });
+    } catch (e: any) {
+      addToast({ title: 'MongoDB update failed', message: e.message, type: 'error' });
+    } finally {
+      setIsApplyingMongo(false);
+    }
   };
 
   const handleFirebaseBackup = async () => {
@@ -508,7 +552,68 @@ const SettingsScreen: React.FC = () => {
               </p>
             </div>
 
-            {/* Stability AI */}
+            {/* OpenRouter */}
+            <div>
+              <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                OpenRouter API Key <span className="text-indigo-400 dark:text-indigo-500 font-normal">(for 200+ LLM models)</span>
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
+                  <input type="password" value={localOpenRouterApiKey}
+                    onChange={(e) => setLocalOpenRouterApiKey(e.target.value)}
+                    placeholder="sk-or-..."
+                    data-testid="openrouter-api-key-input"
+                    className="app-input pl-9" />
+                </div>
+                <button onClick={handleSaveOpenRouterKey} data-testid="openrouter-api-key-save" className="app-btn-primary">Save</button>
+              </div>
+              <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
+                Get a key at <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="underline">openrouter.ai/keys</a>. Routes to Claude, GPT, Llama, Mistral, DeepSeek and more.
+              </p>
+            </div>
+
+            {/* Cartesia */}
+            <div>
+              <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                Cartesia API Key <span className="text-indigo-400 dark:text-indigo-500 font-normal">(for Cartesia TTS)</span>
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
+                  <input type="password" value={localCartesiaApiKey}
+                    onChange={(e) => setLocalCartesiaApiKey(e.target.value)}
+                    placeholder="Your Cartesia API key"
+                    data-testid="cartesia-api-key-input"
+                    className="app-input pl-9" />
+                </div>
+                <button onClick={handleSaveCartesiaKey} data-testid="cartesia-api-key-save" className="app-btn-primary">Save</button>
+              </div>
+              <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
+                Get a key at <a href="https://play.cartesia.ai/keys" target="_blank" rel="noreferrer" className="underline">play.cartesia.ai/keys</a>. Fast, realistic neural TTS.
+              </p>
+            </div>
+
+            {/* Emergent LLM Key */}
+            <div>
+              <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                Emergent LLM Key <span className="text-indigo-400 dark:text-indigo-500 font-normal">(universal key override)</span>
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
+                  <input type="password" value={localEmergentLlmKey}
+                    onChange={(e) => setLocalEmergentLlmKey(e.target.value)}
+                    placeholder="Override the built-in Emergent key"
+                    data-testid="emergent-llm-key-input"
+                    className="app-input pl-9" />
+                </div>
+                <button onClick={handleSaveEmergentLlmKey} data-testid="emergent-llm-key-save" className="app-btn-primary">Save</button>
+              </div>
+              <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
+                Overrides the built-in Emergent universal key for OpenAI, Claude, and Gemini calls. Leave blank to use the platform default.
+              </p>
+            </div>
             <div>
               <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
                 Stability AI Key <span className="text-indigo-400 dark:text-indigo-500 font-normal">(for SD3.5 — minimal content restrictions)</span>
@@ -622,6 +727,44 @@ const SettingsScreen: React.FC = () => {
               </div>
             </div>
 
+          </div>
+        </section>
+
+        {/* ── MongoDB Configuration ── */}
+        <section>
+          <h3 className="text-lg font-semibold text-indigo-900 dark:text-indigo-100 mb-4 border-b border-indigo-200 dark:border-indigo-800 pb-2">MongoDB Configuration</h3>
+          <div className="space-y-3">
+            <p className="text-sm text-indigo-600 dark:text-indigo-400">
+              Override the built-in MongoDB connection. Use your own Atlas cluster URI for persistent personal storage.
+            </p>
+            <div>
+              <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                MongoDB Connection URI
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Database className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
+                  <input
+                    type="password"
+                    value={localMongoUri}
+                    onChange={(e) => setLocalMongoUri(e.target.value)}
+                    placeholder="mongodb+srv://user:pass@cluster.mongodb.net/dbname"
+                    data-testid="mongo-uri-input"
+                    className="app-input pl-9 font-mono text-xs"
+                  />
+                </div>
+                <button
+                  onClick={handleApplyMongoUri}
+                  disabled={isApplyingMongo || !localMongoUri.trim()}
+                  data-testid="mongo-uri-apply"
+                  className="app-btn-primary disabled:opacity-50 flex items-center gap-1.5">
+                  {isApplyingMongo ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Applying…</> : 'Apply'}
+                </button>
+              </div>
+              <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">
+                Reconnects immediately and saves to server config. Leave blank to use the default built-in MongoDB.
+              </p>
+            </div>
           </div>
         </section>
 
