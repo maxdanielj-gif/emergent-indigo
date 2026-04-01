@@ -45,6 +45,7 @@ const SettingsScreen: React.FC = () => {
     lastFirebaseBackupTime, setLastFirebaseBackupTime,
     lastGalleryBackupTime, setLastGalleryBackupTime,
     autoBackupSchedule, setAutoBackupSchedule,
+    realTimeSyncEnabled, setRealTimeSyncEnabled,
     gallery,
   } = useApp();
 
@@ -71,6 +72,9 @@ const SettingsScreen: React.FC = () => {
   const [galleryBackupProgress, setGalleryBackupProgress] = useState<{done: number; total: number} | null>(null);
   const [isGalleryRestoring,   setIsGalleryRestoring]   = useState(false);
   const [galleryRestoreProgress, setGalleryRestoreProgress] = useState<{done: number; total: number} | null>(null);
+  const [isFullRestoring,      setIsFullRestoring]      = useState(false);
+  const [fullRestoreStep,      setFullRestoreStep]       = useState<string | null>(null);
+  const [showRestoreConfirm,   setShowRestoreConfirm]   = useState(false);
 
   // Local state for Firebase config fields (never bind inputs directly to context state)
   const [localFbApiKey,       setLocalFbApiKey]       = useState(firebaseApiKey       || '');
@@ -255,17 +259,13 @@ const SettingsScreen: React.FC = () => {
       return;
     }
     setIsFirebaseBackingUp(true);
-    addToast({ title: 'Backup starting…', message: 'Connecting to Firebase Firestore…', type: 'info' });
+    addToast({ title: 'Backup starting…', message: 'Packaging full app data for Firebase…', type: 'info' });
     try {
-      // Fetch the current full cloud sync data for this user, then back it up to Firestore
-      let syncData: any = null;
-      try {
-        const res = await fetch(`/api/sync/${userId}`);
-        if (res.ok) syncData = await res.json();
-      } catch {}
-      await firebaseBackup({ userId, data: syncData, backedUpAt: Date.now(), appVersion: 2 });
+      // exportData produces the COMPLETE data package (personas, chat, memories, journal, settings)
+      const fullData = await exportData(chatHistory, sessions, activeSessionId);
+      await firebaseBackup(fullData);
       setLastFirebaseBackupTime(Date.now());
-      addToast({ title: 'Backup complete', message: `Data backed up to Firebase Firestore for user: ${userId}`, type: 'success' });
+      addToast({ title: 'Backup complete', message: `Full app data backed up to Firebase Firestore for user: ${userId}`, type: 'success' });
     } catch (e: any) {
       addToast({ title: 'Backup failed', message: e.message || 'Could not back up to Firebase. Check your Firebase config.', type: 'error' });
     } finally {
@@ -344,8 +344,59 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
-  const handleGalleryFirebaseRestore = async () => {
+  // ── Full restore: Firestore (all app data) + Storage (gallery images) ────────
+  const handleFullFirebaseRestore = async () => {
     if (!localFbApiKey || !localFbProjectId || !localFbAppId) {
+      addToast({ title: 'Firebase not configured', message: 'Fill in API Key, Project ID and App ID in Firebase Configuration and save first.', type: 'error' });
+      return;
+    }
+    if (!userId) {
+      addToast({ title: 'User ID required', message: 'Set a User ID in Cloud Sync before restoring.', type: 'error' });
+      return;
+    }
+    setIsFullRestoring(true);
+    setFullRestoreStep(null);
+    try {
+      // Step 1: Restore app data (personas, chat, memories, journal, settings) from Firestore
+      setFullRestoreStep('Step 1 / 2 — Downloading app data from Firestore…');
+      const rawData = await firebaseRestore();
+      if (!rawData) throw new Error('No backup found for this User ID in Firestore. Create a backup first.');
+      // importData applies ALL state: AI profile, personas, chat history, sessions,
+      // journal, memories, knowledge base, user profile, and settings
+      importData(JSON.stringify(rawData), setChatHistory, setSessions, setActiveSessionId);
+
+      // Step 2: Restore gallery images from Firebase Storage (if Storage bucket is set)
+      let galleryMsg = '';
+      if (localFbStorageBucket) {
+        setFullRestoreStep('Step 2 / 2 — Downloading gallery images from Firebase Storage…');
+        try {
+          const added = await firebaseGalleryRestore((done, total) => {
+            setFullRestoreStep(`Step 2 / 2 — Gallery: ${done} / ${total} images downloaded…`);
+          });
+          galleryMsg = added > 0 ? ` ${added} gallery image(s) restored.` : ' Gallery already up to date.';
+        } catch (galleryErr: any) {
+          // Gallery restore failure is non-fatal — app data was already restored
+          galleryMsg = ' (Gallery restore skipped: ' + (galleryErr.message || 'no backup found') + ')';
+        }
+      } else {
+        galleryMsg = ' Gallery not restored (Storage Bucket not configured).';
+      }
+
+      addToast({
+        title: 'Restore complete',
+        message: `App data restored from Firebase.${galleryMsg}`,
+        type: 'success',
+      });
+    } catch (e: any) {
+      addToast({ title: 'Restore failed', message: e.message || 'Could not restore from Firebase.', type: 'error' });
+    } finally {
+      setIsFullRestoring(false);
+      setFullRestoreStep(null);
+      setShowRestoreConfirm(false);
+    }
+  };
+
+  const handleGalleryFirebaseRestore = async () => {    if (!localFbApiKey || !localFbProjectId || !localFbAppId) {
       addToast({ title: 'Firebase not configured', message: 'Fill in API Key, Project ID and App ID in Firebase Configuration and save first.', type: 'error' });
       return;
     }
@@ -1035,7 +1086,7 @@ const SettingsScreen: React.FC = () => {
             {/* Backup / Restore */}
             <div className="pt-2 border-t border-indigo-100 dark:border-indigo-800 space-y-3">
               <p className="text-sm text-indigo-600 dark:text-indigo-400">
-                Back up your app data to Firestore. Your User ID (set in Cloud Sync above) is used as the document key.
+                Back up your <strong>full app data</strong> (personas, chat, memories, journal, settings) to Firestore. Use the same User ID on any device to restore.
               </p>
               {!userId && (
                 <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-sm text-amber-700 dark:text-amber-300">
@@ -1043,7 +1094,7 @@ const SettingsScreen: React.FC = () => {
                 </div>
               )}
 
-              {/* App data backup */}
+              {/* App data backup / check */}
               <div>
                 <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1.5">App Data (Firestore)</p>
                 <div className="flex gap-3">
@@ -1062,6 +1113,49 @@ const SettingsScreen: React.FC = () => {
                   <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-1 text-center">
                     Last backed up: {timeAgo(lastFirebaseBackupTime)}
                   </p>
+                )}
+              </div>
+
+              {/* Full restore on new device */}
+              <div className="border-t border-indigo-100 dark:border-indigo-800 pt-3">
+                <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">Restore Everything to This Device</p>
+                <p className="text-xs text-indigo-500 dark:text-indigo-400 mb-2">
+                  Downloads and applies your full backup: AI personas, chat history, memories, journal, settings, and gallery images.
+                  <strong className="text-amber-600 dark:text-amber-400"> This overwrites current app data.</strong>
+                </p>
+                {!showRestoreConfirm ? (
+                  <button
+                    onClick={() => setShowRestoreConfirm(true)}
+                    disabled={!userId || isFullRestoring}
+                    data-testid="full-restore-trigger-btn"
+                    className="w-full py-2.5 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
+                    Restore All Data from Firebase
+                  </button>
+                ) : (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-xl space-y-2">
+                    {isFullRestoring ? (
+                      <div className="flex flex-col items-center gap-2 py-2">
+                        <RefreshCw className="w-5 h-5 animate-spin text-indigo-500" />
+                        <p className="text-xs text-indigo-700 dark:text-indigo-300 text-center">{fullRestoreStep || 'Preparing…'}</p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Are you sure?</p>
+                        <p className="text-xs text-amber-600 dark:text-amber-400">This will overwrite all current app data with your Firebase backup.</p>
+                        <div className="flex gap-2 pt-1">
+                          <button onClick={handleFullFirebaseRestore}
+                            data-testid="full-restore-confirm-btn"
+                            className="flex-1 py-2 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 transition-colors">
+                            Yes, Restore Now
+                          </button>
+                          <button onClick={() => setShowRestoreConfirm(false)}
+                            className="flex-1 py-2 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 rounded-xl text-sm font-medium hover:bg-amber-50 dark:hover:bg-amber-900 transition-colors">
+                            Cancel
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -1114,6 +1208,31 @@ const SettingsScreen: React.FC = () => {
                     <p className="text-[10px] text-indigo-400 dark:text-indigo-500 mt-1 text-center">Downloads images back to this device</p>
                   </div>
                 </div>
+              </div>
+
+              {/* Real-time sync */}
+              <div className="border-t border-indigo-100 dark:border-indigo-800 pt-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Real-time Sync</p>
+                    <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-0.5">
+                      Syncs personas, memories, journal and settings to Firestore within 30 seconds of any change.
+                      New gallery images upload to Firebase Storage instantly.
+                      Requires Firebase to be configured above.
+                    </p>
+                  </div>
+                  <button
+                    data-testid="real-time-sync-toggle"
+                    onClick={() => setRealTimeSyncEnabled(!realTimeSyncEnabled)}
+                    className={`relative flex-shrink-0 w-12 h-6 rounded-full transition-colors ${realTimeSyncEnabled ? 'bg-indigo-600' : 'bg-indigo-200 dark:bg-indigo-700'}`}>
+                    <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${realTimeSyncEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                {realTimeSyncEnabled && (
+                  <p className="text-[10px] text-green-600 dark:text-green-400 mt-1.5">
+                    Real-time sync is active. Changes will upload to Firestore within 30s. New images upload immediately.
+                  </p>
+                )}
               </div>
 
               {/* Auto-backup schedule */}

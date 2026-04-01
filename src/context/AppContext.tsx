@@ -156,6 +156,8 @@ interface AppContextType extends AppState {
   firebaseRestore: () => Promise<any | null>;
   firebaseGalleryBackup: (onProgress?: (done: number, total: number) => void) => Promise<number>;
   firebaseGalleryRestore: (onProgress?: (done: number, total: number) => void) => Promise<number>;
+  realTimeSyncEnabled: boolean;
+  setRealTimeSyncEnabled: (enabled: boolean) => void;
   autoBackupSchedule: 'off' | 'daily' | 'weekly';
   setAutoBackupSchedule: (s: 'off' | 'daily' | 'weekly') => void;
   asyncApiKey: string | null;
@@ -307,6 +309,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [lastFirebaseBackupTime, setLastFirebaseBackupTimeState] = useState<number | null>(null);
   const [lastGalleryBackupTime,  setLastGalleryBackupTimeState]  = useState<number | null>(null);
   const [autoBackupSchedule,     setAutoBackupScheduleState]     = useState<'off' | 'daily' | 'weekly'>('off');
+  const [realTimeSyncEnabled,    setRealTimeSyncEnabledState]    = useState(false);
   const [anthropicApiKey, setAnthropicApiKeyState] = useState<string | null>(null);
   const [elevenLabsApiKey, setElevenLabsApiKeyState] = useState<string | null>(null);
   const [geminiApiKey, setGeminiApiKeyState] = useState<string | null>(null);
@@ -617,6 +620,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setLastFirebaseBackupTimeState(savedData.lastFirebaseBackupTime || null);
                 setLastGalleryBackupTimeState(savedData.lastGalleryBackupTime || null);
                 setAutoBackupScheduleState(savedData.autoBackupSchedule || 'off');
+                setRealTimeSyncEnabledState(savedData.realTimeSyncEnabled ?? false);
                 setFirebaseApiKey(savedData.firebaseApiKey || null);
                 setFirebaseAuthDomain(savedData.firebaseAuthDomain || null);
                 setFirebaseProjectId(savedData.firebaseProjectId || null);
@@ -749,6 +753,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           lastFirebaseBackupTime,
           lastGalleryBackupTime,
           autoBackupSchedule,
+          realTimeSyncEnabled,
           lastInteractionTime,
           userId,
           isSuccessfullyLoaded,
@@ -905,7 +910,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (now - last < INTERVAL_MS) return;
 
       try {
-        await backupToFirestore(userId, { gallery }, firebaseRuntimeConfig);
+        await backupToFirestore(userId, {
+          aiProfile, savedPersonas, userProfile,
+          journal, knowledgeBase, memories,
+          gallery,
+          apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey,
+          freepikApiKey, wavespeedApiKey, stabilityApiKey, openRouterApiKey, cartesiaApiKey,
+          emergentLlmKey, mongoUri,
+          autoSaveChat, autoBackupSchedule,
+        }, firebaseRuntimeConfig);
         const ts = Date.now();
         lastAutoBackupRef.current = ts;
         setLastFirebaseBackupTimeState(ts);
@@ -928,6 +941,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, autoBackupSchedule, userId, firebaseApiKey, firebaseProjectId, firebaseAppId]);
+
+  // ── Real-time Firestore sync ───────────────────────────────────────────────
+  // Debounces a Firestore backup 30s after any key state change.
+  // Gallery images are handled separately (immediate upload in addToGallery).
+  // Chat sessions are NOT backed up here (they live in ChatContext); use the
+  // manual "Backup to Firestore" button in Settings for a full backup including chat.
+  useEffect(() => {
+    if (!isLoaded || !realTimeSyncEnabled) return;
+    if (!userId?.trim() || !firebaseApiKey || !firebaseProjectId || !firebaseAppId) return;
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        await backupToFirestore(userId, {
+          aiProfile, savedPersonas, userProfile,
+          journal, knowledgeBase, memories,
+          gallery,
+          apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey,
+          freepikApiKey, wavespeedApiKey, stabilityApiKey, openRouterApiKey, cartesiaApiKey,
+          emergentLlmKey, mongoUri,
+          autoSaveChat, autoBackupSchedule, realTimeSyncEnabled,
+        }, firebaseRuntimeConfig);
+        console.log('[Indigo] Real-time sync → Firestore complete');
+      } catch (e) {
+        console.error('[Indigo] Real-time sync to Firebase failed:', e);
+      }
+    }, 30_000);
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    isLoaded, realTimeSyncEnabled, userId, firebaseApiKey, firebaseProjectId, firebaseAppId,
+    aiProfile, savedPersonas, userProfile, journal, knowledgeBase, memories,
+  ]);
 
   // Proactive Message Trigger
   useEffect(() => {
@@ -1102,7 +1147,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addToGallery = React.useCallback((item: GalleryItem) => {
     setGallery(prev => [item, ...prev]);
     saveData();
-  }, [saveData]);
+    // Immediately upload to Firebase Storage when real-time sync is active
+    if (realTimeSyncEnabled && userId?.trim() && firebaseApiKey && firebaseProjectId && firebaseAppId && firebaseStorageBucket) {
+      const rtConfig = { apiKey: firebaseApiKey, projectId: firebaseProjectId, appId: firebaseAppId, storageBucket: firebaseStorageBucket };
+      uploadGalleryToFirebaseStorage(userId, [item], rtConfig).catch(e => {
+        console.error('Real-time gallery upload failed:', e);
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveData, realTimeSyncEnabled, userId, firebaseApiKey, firebaseProjectId, firebaseAppId, firebaseStorageBucket]);
 
   const deleteImageFromGallery = (id: string) => {
     setGallery(prev => prev.filter(item => item.id !== id));
@@ -1228,6 +1281,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAutoBackupScheduleState(s);
     loadFromDB('indigo_app_data_core').then((core: any) => {
       if (core) saveToDB('indigo_app_data_core', { ...core, autoBackupSchedule: s });
+    }).catch(() => {});
+  };
+
+  const setRealTimeSyncEnabled = (enabled: boolean) => {
+    setRealTimeSyncEnabledState(enabled);
+    loadFromDB('indigo_app_data_core').then((core: any) => {
+      if (core) saveToDB('indigo_app_data_core', { ...core, realTimeSyncEnabled: enabled });
     }).catch(() => {});
   };
 
@@ -1849,6 +1909,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateAIProfile, fetchWithRetry, clearAllToasts,
       firebaseBackup, firebaseRestore, firebaseGalleryBackup, firebaseGalleryRestore,
       autoBackupSchedule, setAutoBackupSchedule,
+      realTimeSyncEnabled, setRealTimeSyncEnabled,
     }}>
       {!isLoaded ? (
         <div className="flex h-screen flex-col items-center justify-center bg-indigo-50 dark:bg-indigo-950 p-4 text-center">
