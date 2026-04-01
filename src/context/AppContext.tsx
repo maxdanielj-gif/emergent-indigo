@@ -726,6 +726,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           kaggleApiKey,
           openaiApiKey,
           stabilityApiKey,
+          mongoUri,
           lastInteractionTime,
           userId,
           isSuccessfullyLoaded,
@@ -785,14 +786,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Debounce save to avoid excessive writes
-  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey, freepikApiKey, wavespeedApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId, openRouterApiKey, cartesiaApiKey, emergentLlmKey, stabilityApiKey, openaiApiKey, kaggleApiKey, firebaseApiKey, firebaseAuthDomain, firebaseProjectId, firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId, firebaseVapidKey, firebaseServiceAccountKey]);
+  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey, freepikApiKey, wavespeedApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId, openRouterApiKey, cartesiaApiKey, emergentLlmKey, stabilityApiKey, openaiApiKey, kaggleApiKey, firebaseApiKey, firebaseAuthDomain, firebaseProjectId, firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId, firebaseVapidKey, firebaseServiceAccountKey, mongoUri]);
 
   // Debounce save to avoid excessive writes
   useEffect(() => {
     if (!isLoaded) return;
     const timeoutId = setTimeout(saveData, 1000);
     return () => clearTimeout(timeoutId);
-  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey, freepikApiKey, wavespeedApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId, openRouterApiKey, cartesiaApiKey, emergentLlmKey, stabilityApiKey, openaiApiKey, kaggleApiKey, firebaseApiKey, firebaseAuthDomain, firebaseProjectId, firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId, firebaseVapidKey, firebaseServiceAccountKey, saveData]);
+  }, [aiProfile, savedPersonas, userProfile, gallery, journal, knowledgeBase, memories, apiKey, anthropicApiKey, asyncApiKey, elevenLabsApiKey, geminiApiKey, freepikApiKey, wavespeedApiKey, fcmToken, autoSaveChat, autoJsonBackup, autoDriveBackup, isLoaded, isGoogleDriveConnected, lastInteractionTime, userId, openRouterApiKey, cartesiaApiKey, emergentLlmKey, stabilityApiKey, openaiApiKey, kaggleApiKey, firebaseApiKey, firebaseAuthDomain, firebaseProjectId, firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId, firebaseVapidKey, firebaseServiceAccountKey, mongoUri, saveData]);
 
   // ── Gallery save — completely separate from saveData to avoid hook ordering issues.
   // Only runs when galleryLoaded is true, so it never overwrites with an empty list.

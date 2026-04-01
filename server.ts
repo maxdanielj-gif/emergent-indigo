@@ -1410,6 +1410,7 @@ app.post("/api/image/stability/generate", express.json({ limit: "20mb" }), async
     }
 
     const mode = isImg2Img ? "img2img" : "txt2img";
+    form.append("mode", mode);
     console.log(`Stability AI: endpoint=${endpoint}, model=${selectedModel}, mode=${mode}, aspect=${isImg2Img ? "n/a" : aspectRatio}, prompt="${prompt.slice(0, 80)}"`);
 
     const response = await fetch(`https://api.stability.ai/v2beta/stable-image/generate/${endpoint}`, {

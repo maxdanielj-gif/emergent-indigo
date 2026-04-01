@@ -401,6 +401,12 @@ const ImageGeneratorScreen: React.FC = () => {
   const handleGenerate = async () => {
     if (!prompt.trim()) { addToast({ title: 'Prompt required', message: 'Describe the image you want.', type: 'warning' }); return; }
 
+    // ── Always build appearance-enriched prompt first ────────────────────────
+    const appearancePrefix = aiProfile.appearance?.trim();
+    const enrichedPrompt = appearancePrefix
+      ? `${appearancePrefix}. ${prompt.trim()}`
+      : prompt.trim();
+
     // ── Stability AI ─────────────────────────────────────────────────────────
     if (provider === 'stability') {
       setStabilityLoading(true);
@@ -410,7 +416,7 @@ const ImageGeneratorScreen: React.FC = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt:           prompt.trim(),
+            prompt:           enrichedPrompt,
             negativePrompt:   stabilityNegPrompt.trim() || undefined,
             aspectRatio:      stabilityInitImage ? undefined : stabilityAspectRatio,
             outputFormat:     stabilityOutputFmt,
@@ -425,7 +431,7 @@ const ImageGeneratorScreen: React.FC = () => {
         const data = await res.json();
         if (!res.ok) { addToast({ title: 'Stability AI error', message: data.error || 'Generation failed.', type: 'error' }); return; }
         setStabilityResult(data.image);
-        addToGallery({ url: data.image, prompt: prompt.trim(), provider: 'Stability AI', model: stabilityModel, aspectRatio: stabilityAspectRatio, seed: data.seed });
+        addToGallery({ url: data.image, prompt: enrichedPrompt, provider: 'Stability AI', model: stabilityModel, aspectRatio: stabilityAspectRatio, seed: data.seed });
         addToast({ title: 'Image generated', message: `Model: ${stabilityModel}`, type: 'success' });
       } catch (e: any) {
         addToast({ title: 'Generation failed', message: e.message, type: 'error' });
@@ -449,10 +455,8 @@ const ImageGeneratorScreen: React.FC = () => {
     const selectedModel = MODELS.find(m => m.value === model);
     const modelSupportsLoras = selectedModel?.loraOk ?? true;
     const lorasBlocked = usingRefs || !modelSupportsLoras;
-    const appearance = aiProfile.appearance?.trim();
-    let finalPrompt = prompt.trim();
-    // Always prepend appearance description — not just when structure ref is on
-    if (appearance) finalPrompt = `${appearance}. ${finalPrompt}`;
+    // enrichedPrompt already has appearance prepended (computed above)
+    let finalPrompt = enrichedPrompt;
     promptRef.current = finalPrompt;
 
     try {

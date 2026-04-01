@@ -235,20 +235,28 @@ const SettingsScreen: React.FC = () => {
   };
 
   const handleFirebaseBackup = async () => {
+    // Pre-flight: check Firebase config fields are filled
+    if (!localFbApiKey || !localFbProjectId || !localFbAppId) {
+      addToast({ title: 'Firebase not configured', message: 'Fill in API Key, Project ID and App ID in the Firebase Configuration section above, then save.', type: 'error' });
+      return;
+    }
+    if (!userId) {
+      addToast({ title: 'User ID required', message: 'Set a User ID in the Cloud Sync section before backing up.', type: 'error' });
+      return;
+    }
     setIsFirebaseBackingUp(true);
+    addToast({ title: 'Backup starting…', message: 'Connecting to Firebase Firestore…', type: 'info' });
     try {
       // Fetch the current full cloud sync data for this user, then back it up to Firestore
       let syncData: any = null;
-      if (userId) {
-        try {
-          const res = await fetch(`/api/sync/${userId}`);
-          if (res.ok) syncData = await res.json();
-        } catch {}
-      }
+      try {
+        const res = await fetch(`/api/sync/${userId}`);
+        if (res.ok) syncData = await res.json();
+      } catch {}
       await firebaseBackup({ userId, data: syncData, backedUpAt: Date.now(), appVersion: 2 });
-      addToast({ title: 'Backup complete', message: 'Full app data backed up to Firebase Firestore.', type: 'success' });
+      addToast({ title: 'Backup complete', message: `Data backed up to Firebase Firestore for user: ${userId}`, type: 'success' });
     } catch (e: any) {
-      addToast({ title: 'Backup failed', message: e.message || 'Could not back up to Firebase.', type: 'error' });
+      addToast({ title: 'Backup failed', message: e.message || 'Could not back up to Firebase. Check your Firebase config.', type: 'error' });
     } finally {
       setIsFirebaseBackingUp(false);
     }
