@@ -37,6 +37,14 @@ const SettingsScreen: React.FC = () => {
     updateAIProfile,
     isDebuggerEnabled, setIsDebuggerEnabled,
     firebaseBackup, firebaseRestore,
+    firebaseApiKey:       fbApiKey,       setFirebaseApiKey:       setFbApiKey,
+    firebaseAuthDomain:   fbAuthDomain,   setFirebaseAuthDomain:   setFbAuthDomain,
+    firebaseProjectId:    fbProjectId,    setFirebaseProjectId:    setFbProjectId,
+    firebaseStorageBucket:fbStorageBucket,setFirebaseStorageBucket:setFbStorageBucket,
+    firebaseMessagingSenderId: fbSenderId,setFirebaseMessagingSenderId: setFbSenderId,
+    firebaseAppId:        fbAppId,        setFirebaseAppId:        setFbAppId,
+    firebaseVapidKey:     fbVapidKey,     setFirebaseVapidKey:     setFbVapidKey,
+    firebaseServiceAccountKey: fbServiceKey, setFirebaseServiceAccountKey: setFbServiceKey,
   } = useApp();
 
   const { chatHistory, addChatMessage, setChatHistory, sessions, setSessions, activeSessionId, setActiveSessionId } = useChat();
@@ -175,6 +183,11 @@ const SettingsScreen: React.FC = () => {
   const handleSaveEmergentLlmKey = () => {
     setEmergentLlmKey(localEmergentLlmKey.trim() || null);
     addToast({ title: 'Saved', message: 'Emergent LLM key saved.', type: 'success' });
+  };
+
+  const handleSaveFirebaseConfig = () => {
+    // Values are already held in context state via setFb* — just show a toast confirmation
+    addToast({ title: 'Firebase Config Saved', message: 'Firebase configuration updated. It will be used for the next backup/restore.', type: 'success' });
   };
   const handleApplyMongoUri = async () => {
     if (!localMongoUri.trim()) return;
@@ -793,7 +806,7 @@ const SettingsScreen: React.FC = () => {
                   <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">{label}</label>
                   <input
                     type="password"
-                    value={val}
+                    value={val ?? ''}
                     onChange={(e) => set(e.target.value)}
                     placeholder={ph}
                     data-testid={`firebase-${key}-input`}
@@ -809,7 +822,7 @@ const SettingsScreen: React.FC = () => {
                 Service Account Key <span className="font-normal text-indigo-400">(optional — for server-side operations)</span>
               </label>
               <textarea
-                value={fbServiceKey}
+                value={fbServiceKey ?? ''}
                 onChange={(e) => setFbServiceKey(e.target.value)}
                 placeholder={'{\n  "type": "service_account",\n  "project_id": "...",\n  ...\n}'}
                 rows={4}
