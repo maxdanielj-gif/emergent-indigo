@@ -1603,16 +1603,21 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 // ── Server start and WebSocket TTS proxy ──────────────────────────────────────
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  const distPaths = [
+    path.resolve(process.cwd(), "dist"),
+    path.resolve(__dirname, "dist"),
+    path.resolve(__dirname, "..", "dist"),
+  ];
+  const distPath = distPaths.find((p) => fs.existsSync(p));
+
+  // Use Vite middleware in dev mode, OR when no production build exists
+  if (process.env.NODE_ENV !== "production" || !distPath) {
+    if (process.env.NODE_ENV === "production" && !distPath) {
+      console.warn("No dist/ build found in production mode — falling back to Vite dev server.");
+    }
     const vite = await createViteServer({ server: { middlewareMode: true, allowedHosts: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    const distPaths = [
-      path.resolve(process.cwd(), "dist"),
-      path.resolve(__dirname, "dist"),
-      path.resolve(__dirname, "..", "dist"),
-    ];
-    const distPath = distPaths.find((p) => fs.existsSync(p)) || distPaths[0];
     console.log(`Serving static files from: ${distPath}`);
     app.use(express.static(distPath));
     app.get("*", (_req, res) => res.sendFile(path.resolve(distPath, "index.html")));

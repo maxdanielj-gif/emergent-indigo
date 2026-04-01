@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "node /app/node_modules/.bin/tsx watch /app/server.ts"
+    "start": "bash -c 'cd /app && NODE_ENV=development exec node_modules/.bin/tsx watch server.ts'"
   }
 }
