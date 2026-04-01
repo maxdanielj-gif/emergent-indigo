@@ -151,12 +151,18 @@ interface AppContextType extends AppState {
   asyncApiKey: string | null;
   setAsyncApiKey: (key: string | null) => void;
   firebaseApiKey: string | null;
+  firebaseAuthDomain: string | null;
   firebaseProjectId: string | null;
+  firebaseStorageBucket: string | null;
   firebaseAppId: string | null;
   firebaseMessagingSenderId: string | null;
   firebaseVapidKey: string | null;
-  setFirebaseConfig: (config: { apiKey: string | null; projectId: string | null; appId: string | null; messagingSenderId: string | null; vapidKey: string | null }) => void;
   firebaseServiceAccountKey: string | null;
+  setFirebaseConfig: (config: {
+    apiKey?: string | null; authDomain?: string | null; projectId?: string | null;
+    storageBucket?: string | null; appId?: string | null;
+    messagingSenderId?: string | null; vapidKey?: string | null;
+  }) => void;
   setFirebaseServiceAccountKey: (key: string | null) => void;
   googleClientId: string | null;
   googleClientSecret: string | null;
@@ -319,12 +325,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [timeZone, setTimeZoneState] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [backgrounds, setBackgrounds] = useState<Background[]>([]);
   const [asyncApiKey, setAsyncApiKey] = useState<string | null>(null);
-  const [firebaseApiKey, setFirebaseApiKey] = useState<string | null>(null);
-  const [firebaseProjectId, setFirebaseProjectId] = useState<string | null>(null);
-  const [firebaseAppId, setFirebaseAppId] = useState<string | null>(null);
-  const [firebaseMessagingSenderId, setFirebaseMessagingSenderId] = useState<string | null>(null);
-  const [firebaseVapidKey, setFirebaseVapidKey] = useState<string | null>(null);
-  const [firebaseServiceAccountKey, setFirebaseServiceAccountKey] = useState<string | null>(null);
+  const [firebaseApiKey,           setFirebaseApiKey]           = useState<string | null>(null);
+  const [firebaseAuthDomain,       setFirebaseAuthDomain]       = useState<string | null>(null);
+  const [firebaseProjectId,        setFirebaseProjectId]        = useState<string | null>(null);
+  const [firebaseStorageBucket,    setFirebaseStorageBucket]    = useState<string | null>(null);
+  const [firebaseAppId,            setFirebaseAppId]            = useState<string | null>(null);
+  const [firebaseMessagingSenderId,setFirebaseMessagingSenderId]= useState<string | null>(null);
+  const [firebaseVapidKey,         setFirebaseVapidKey]         = useState<string | null>(null);
+  const [firebaseServiceAccountKey,setFirebaseServiceAccountKey]= useState<string | null>(null);
   const [googleClientId, setGoogleClientId] = useState<string | null>(null);
   const [googleClientSecret, setGoogleClientSecret] = useState<string | null>(null);
   const [lastInteractionTime, setLastInteractionTime] = useState(Date.now());
@@ -592,7 +600,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setEmergentLlmKeyState(savedData.emergentLlmKey || null);
                 setMongoUriState(savedData.mongoUri || null);
                 setFirebaseApiKey(savedData.firebaseApiKey || null);
+                setFirebaseAuthDomain(savedData.firebaseAuthDomain || null);
                 setFirebaseProjectId(savedData.firebaseProjectId || null);
+                setFirebaseStorageBucket(savedData.firebaseStorageBucket || null);
                 setFirebaseAppId(savedData.firebaseAppId || null);
                 setFirebaseMessagingSenderId(savedData.firebaseMessagingSenderId || null);
                 setFirebaseVapidKey(savedData.firebaseVapidKey || null);
@@ -1135,14 +1145,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ── Firebase backup / restore ────────────────────────────────────────────────
+  const firebaseRuntimeConfig = {
+    apiKey: firebaseApiKey, authDomain: firebaseAuthDomain,
+    projectId: firebaseProjectId, storageBucket: firebaseStorageBucket,
+    appId: firebaseAppId, messagingSenderId: firebaseMessagingSenderId,
+  };
+
   const firebaseBackup = async (dataToBackup: any) => {
     if (!userId) throw new Error("Set a User ID in Cloud Sync settings before backing up.");
-    await backupToFirestore(userId, dataToBackup);
+    await backupToFirestore(userId, dataToBackup, firebaseRuntimeConfig);
   };
 
   const firebaseRestore = async (): Promise<any | null> => {
     if (!userId) throw new Error("Set a User ID in Cloud Sync settings before restoring.");
-    return restoreFromFirestore(userId);
+    return restoreFromFirestore(userId, firebaseRuntimeConfig);
   };
 
   const clearAllToasts = () => {
@@ -1571,7 +1587,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Kept as no-ops so any old code that calls them doesn't crash.
   // Firebase and Google OAuth have been removed from this app.
-  const setFirebaseConfig = (_config: any) => {};
+  const setFirebaseConfig = (config: {
+    apiKey?: string | null; authDomain?: string | null; projectId?: string | null;
+    storageBucket?: string | null; appId?: string | null;
+    messagingSenderId?: string | null; vapidKey?: string | null;
+  }) => {
+    if (config.apiKey           !== undefined) { setFirebaseApiKey(config.apiKey);                     saveData({ firebaseApiKey:           config.apiKey }); }
+    if (config.authDomain       !== undefined) { setFirebaseAuthDomain(config.authDomain);             saveData({ firebaseAuthDomain:       config.authDomain }); }
+    if (config.projectId        !== undefined) { setFirebaseProjectId(config.projectId);               saveData({ firebaseProjectId:        config.projectId }); }
+    if (config.storageBucket    !== undefined) { setFirebaseStorageBucket(config.storageBucket);       saveData({ firebaseStorageBucket:    config.storageBucket }); }
+    if (config.appId            !== undefined) { setFirebaseAppId(config.appId);                       saveData({ firebaseAppId:            config.appId }); }
+    if (config.messagingSenderId !== undefined){ setFirebaseMessagingSenderId(config.messagingSenderId);saveData({ firebaseMessagingSenderId:config.messagingSenderId }); }
+    if (config.vapidKey         !== undefined) { setFirebaseVapidKey(config.vapidKey);                 saveData({ firebaseVapidKey:         config.vapidKey }); }
+  };
   const setGoogleConfig   = (_clientId: string, _clientSecret: string) => {};
 
   const setAutoSaveChat = (enabled: boolean) => setAutoSaveChatState(enabled);
@@ -1674,7 +1702,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timeZone, setTimeZone,
       backgrounds, addBackground, deleteBackground,
       asyncApiKey, setAsyncApiKey,
-      firebaseApiKey, firebaseProjectId, firebaseAppId, firebaseMessagingSenderId, firebaseVapidKey, setFirebaseConfig,
+      firebaseApiKey, firebaseAuthDomain, firebaseProjectId, firebaseStorageBucket,
+      firebaseAppId, firebaseMessagingSenderId, firebaseVapidKey, setFirebaseConfig,
       firebaseServiceAccountKey, setFirebaseServiceAccountKey,
       googleClientId, googleClientSecret, setGoogleConfig,
       openRouterApiKey, setOpenRouterApiKey,

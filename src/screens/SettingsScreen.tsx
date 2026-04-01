@@ -768,41 +768,86 @@ const SettingsScreen: React.FC = () => {
           </div>
         </section>
 
-        {/* ── Firebase Backup ── */}
+        {/* ── Firebase Configuration ── */}
         <section>
-          <h3 className="text-lg font-semibold text-indigo-900 dark:text-indigo-100 mb-4 border-b border-indigo-200 dark:border-indigo-800 pb-2">Firebase Backup</h3>
-          <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-indigo-900 dark:text-indigo-100 mb-4 border-b border-indigo-200 dark:border-indigo-800 pb-2">Firebase Configuration</h3>
+          <div className="space-y-4">
             <p className="text-sm text-indigo-600 dark:text-indigo-400">
-              Back up your app data to Firebase Firestore. Your User ID (set in Cloud Sync above) is used as the backup key.
+              Enter your Firebase project credentials to enable cloud backup. Find these in the{' '}
+              <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="underline font-medium">Firebase Console</a>{' '}
+              → Project Settings → Your apps → SDK config.
             </p>
-            {!userId && (
-              <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-sm text-amber-700 dark:text-amber-300">
-                Set a User ID in Cloud Sync &amp; Recovery above before using Firebase backup.
-              </div>
-            )}
-            <div className="flex gap-3">
-              <button
-                onClick={handleFirebaseBackup}
-                disabled={isFirebaseBackingUp || !userId}
-                data-testid="firebase-backup-btn"
-                className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
-                {isFirebaseBackingUp
-                  ? <><RefreshCw className="w-4 h-4 animate-spin" />Backing up…</>
-                  : 'Backup to Firebase'}
-              </button>
-              <button
-                onClick={handleFirebaseRestore}
-                disabled={isFirebaseRestoring || !userId}
-                data-testid="firebase-restore-btn"
-                className="flex-1 py-2.5 bg-white dark:bg-indigo-900 border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
-                {isFirebaseRestoring
-                  ? <><RefreshCw className="w-4 h-4 animate-spin" />Checking…</>
-                  : 'Check Firebase Backup'}
-              </button>
+
+            {/* 2-col grid for short fields */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { label: 'API Key',              key: 'apiKey',            val: fbApiKey,       set: setFbApiKey,       ph: 'AIzaSy...' },
+                { label: 'Auth Domain',          key: 'authDomain',        val: fbAuthDomain,   set: setFbAuthDomain,   ph: 'project.firebaseapp.com' },
+                { label: 'Project ID',           key: 'projectId',         val: fbProjectId,    set: setFbProjectId,    ph: 'my-project-id' },
+                { label: 'Storage Bucket',       key: 'storageBucket',     val: fbStorageBucket,set: setFbStorageBucket,ph: 'project.firebasestorage.app' },
+                { label: 'Messaging Sender ID',  key: 'messagingSenderId', val: fbSenderId,     set: setFbSenderId,     ph: '123456789012' },
+                { label: 'App ID',               key: 'appId',             val: fbAppId,        set: setFbAppId,        ph: '1:123:web:abc123' },
+                { label: 'VAPID Key',            key: 'vapidKey',          val: fbVapidKey,     set: setFbVapidKey,     ph: 'BJ...' },
+              ].map(({ label, key, val, set, ph }) => (
+                <div key={key}>
+                  <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">{label}</label>
+                  <input
+                    type="password"
+                    value={val}
+                    onChange={(e) => set(e.target.value)}
+                    placeholder={ph}
+                    data-testid={`firebase-${key}-input`}
+                    className="app-input font-mono text-xs"
+                  />
+                </div>
+              ))}
             </div>
-            <p className="text-xs text-indigo-400 dark:text-indigo-500">
-              Firebase project: <span className="font-mono">gen-lang-client-0184415198</span>. Gallery images are excluded from Firestore backups to stay within document size limits.
-            </p>
+
+            {/* Service Account Key — full-width textarea */}
+            <div>
+              <label className="block text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">
+                Service Account Key <span className="font-normal text-indigo-400">(optional — for server-side operations)</span>
+              </label>
+              <textarea
+                value={fbServiceKey}
+                onChange={(e) => setFbServiceKey(e.target.value)}
+                placeholder={'{\n  "type": "service_account",\n  "project_id": "...",\n  ...\n}'}
+                rows={4}
+                data-testid="firebase-serviceAccountKey-input"
+                className="w-full p-2 border border-indigo-300 dark:border-indigo-700 rounded-xl bg-white dark:bg-indigo-950 text-indigo-900 dark:text-indigo-100 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none resize-y"
+              />
+            </div>
+
+            <button
+              onClick={handleSaveFirebaseConfig}
+              data-testid="firebase-config-save"
+              className="w-full py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors text-sm">
+              Save Firebase Configuration
+            </button>
+
+            {/* Backup / Restore */}
+            <div className="pt-2 border-t border-indigo-100 dark:border-indigo-800">
+              <p className="text-sm text-indigo-600 dark:text-indigo-400 mb-3">
+                Back up your app data to Firestore. Your User ID (set in Cloud Sync above) is used as the document key.
+              </p>
+              {!userId && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-sm text-amber-700 dark:text-amber-300 mb-3">
+                  Set a User ID in Cloud Sync &amp; Recovery above before backing up.
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button onClick={handleFirebaseBackup} disabled={isFirebaseBackingUp || !userId}
+                  data-testid="firebase-backup-btn"
+                  className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
+                  {isFirebaseBackingUp ? <><RefreshCw className="w-4 h-4 animate-spin" />Backing up…</> : 'Backup to Firebase'}
+                </button>
+                <button onClick={handleFirebaseRestore} disabled={isFirebaseRestoring || !userId}
+                  data-testid="firebase-restore-btn"
+                  className="flex-1 py-2.5 bg-white dark:bg-indigo-900 border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
+                  {isFirebaseRestoring ? <><RefreshCw className="w-4 h-4 animate-spin" />Checking…</> : 'Check Backup'}
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 

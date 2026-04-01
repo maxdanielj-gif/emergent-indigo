@@ -1,53 +1,75 @@
-import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
+import { initializeApp, getApps, deleteApp, FirebaseApp } from 'firebase/app';
 import {
   getFirestore, doc, setDoc, getDoc, Firestore, serverTimestamp,
 } from 'firebase/firestore';
 
-// ── Firebase config from env vars (set in .env / vite.config.ts) ──────────────
-const firebaseConfig = {
-  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
-};
+export interface FirebaseRuntimeConfig {
+  apiKey?:            string | null;
+  authDomain?:        string | null;
+  projectId?:         string | null;
+  storageBucket?:     string | null;
+  messagingSenderId?: string | null;
+  appId?:             string | null;
+}
 
-let app: FirebaseApp | null   = null;
-let db:  Firestore   | null   = null;
+// ── Build config: env vars are the fallback, runtime values take priority ─────
+function buildConfig(runtime?: FirebaseRuntimeConfig) {
+  return {
+    apiKey:            runtime?.apiKey            || import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain:        runtime?.authDomain        || import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId:         runtime?.projectId         || import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket:     runtime?.storageBucket     || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: runtime?.messagingSenderId || import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId:             runtime?.appId             || import.meta.env.VITE_FIREBASE_APP_ID,
+  };
+}
 
-function getFirebaseApp(): FirebaseApp {
-  if (!app) {
-    const existing = getApps();
-    app = existing.length > 0 ? existing[0] : initializeApp(firebaseConfig);
+function isConfigured(config: ReturnType<typeof buildConfig>): boolean {
+  return !!(config.apiKey && config.projectId && config.appId);
+}
+
+// ── Get a Firestore instance using the provided config ────────────────────────
+// Re-initializes Firebase if the config has changed (e.g. user updated keys in Settings)
+let currentApp:  FirebaseApp | null = null;
+let currentDb:   Firestore   | null = null;
+let lastConfigKey = '';
+
+function getDb(runtime?: FirebaseRuntimeConfig): Firestore {
+  const config    = buildConfig(runtime);
+  const configKey = JSON.stringify(config);
+
+  if (!isConfigured(config)) {
+    throw new Error(
+      'Firebase is not fully configured. Fill in all Firebase keys in Settings → Firebase Configuration.'
+    );
   }
-  return app;
-}
 
-function getDb(): Firestore {
-  if (!db) db = getFirestore(getFirebaseApp());
-  return db;
-}
+  // Re-initialize only when config actually changed
+  if (configKey !== lastConfigKey) {
+    if (currentApp) {
+      try { deleteApp(currentApp); } catch {}
+    }
+    currentApp     = initializeApp(config, `indigo-${Date.now()}`);
+    currentDb      = getFirestore(currentApp);
+    lastConfigKey  = configKey;
+  }
 
-function isConfigured(): boolean {
-  return !!(
-    firebaseConfig.apiKey &&
-    firebaseConfig.projectId &&
-    firebaseConfig.appId
-  );
+  return currentDb!;
 }
 
 // ── Backup app data to Firestore ──────────────────────────────────────────────
-export async function backupToFirestore(userId: string, data: any): Promise<void> {
-  if (!isConfigured()) throw new Error("Firebase is not configured. Check your VITE_FIREBASE_* environment variables.");
-  if (!userId?.trim()) throw new Error("A User ID is required for Firebase backup. Set one in Settings → Cloud Sync.");
+export async function backupToFirestore(
+  userId: string,
+  data: any,
+  runtime?: FirebaseRuntimeConfig,
+): Promise<void> {
+  if (!userId?.trim()) throw new Error("A User ID is required. Set one in Settings → Cloud Sync.");
 
-  const firestore = getDb();
-  // Strip gallery (large base64 images) from backup to avoid Firestore 1MB doc limit
+  const db = getDb(runtime);
   const { gallery, ...safeData } = data;
   const galleryIds = Array.isArray(gallery) ? gallery.map((g: any) => g.id) : [];
 
-  await setDoc(doc(firestore, "indigo_backups", userId.trim()), {
+  await setDoc(doc(db, 'indigo_backups', userId.trim()), {
     ...safeData,
     galleryIds,
     backedUpAt:    serverTimestamp(),
@@ -56,14 +78,14 @@ export async function backupToFirestore(userId: string, data: any): Promise<void
 }
 
 // ── Restore app data from Firestore ──────────────────────────────────────────
-export async function restoreFromFirestore(userId: string): Promise<any | null> {
-  if (!isConfigured()) throw new Error("Firebase is not configured. Check your VITE_FIREBASE_* environment variables.");
+export async function restoreFromFirestore(
+  userId: string,
+  runtime?: FirebaseRuntimeConfig,
+): Promise<any | null> {
   if (!userId?.trim()) throw new Error("A User ID is required. Set one in Settings → Cloud Sync.");
 
-  const firestore = getDb();
-  const snap = await getDoc(doc(firestore, "indigo_backups", userId.trim()));
+  const db   = getDb(runtime);
+  const snap = await getDoc(doc(db, 'indigo_backups', userId.trim()));
   if (!snap.exists()) return null;
   return snap.data();
 }
-
-export { isConfigured };
