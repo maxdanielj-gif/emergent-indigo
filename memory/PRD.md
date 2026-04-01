@@ -23,6 +23,11 @@ Import the GitHub repo (maxdanielj-gif/indigo) as-is and add tweaks:
 - `/app/src/context/AppContext.tsx` — App state + Firebase backup functions
 - `/app/.env` — All environment variables
 
+### 2026-04-02 — Real-time Sync + Full Firebase Restore
+- **Real-time sync toggle**: `realTimeSyncEnabled` state (IDB-persisted). When ON: key state changes (personas, memories, journal) debounce a Firestore backup every 30s. New gallery images upload to Firebase Storage immediately via modified `addToGallery`.
+- **Full Firestore backup**: `handleFirebaseBackup` now uses `exportData(chatHistory, sessions, ...)` for a COMPLETE backup including chat sessions, personas, memories, journal, and settings.
+- **Full restore on new device**: `handleFullFirebaseRestore` — Step 1: fetches Firestore backup + calls `importData` to apply all state (personas, chat, memories, journal, settings). Step 2: calls `firebaseGalleryRestore` to download gallery images from Storage. Confirmation dialog before overwriting.
+
 ### 2026-04-02 — Gallery Restore + Auto-Backup Schedule
 - **Gallery Firebase Storage restore**: `restoreGalleryFromFirebaseStorage` reads manifest from Firestore, gets download URLs, fetches each image and converts to data URL, adds to local gallery (skips duplicates by id). Side-by-side Backup/Restore buttons with progress counters.
 - **Auto-backup schedule**: `autoBackupSchedule: 'off' | 'daily' | 'weekly'` state in AppContext (IDB-persisted). `useEffect` checks every 10min if backup is due; triggers silent Firestore backup + shows push notification on completion. UI: 3-button toggle in Firebase section of Settings with "Next in: X" countdown.
